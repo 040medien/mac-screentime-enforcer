@@ -1,0 +1,19 @@
+{
+  "child_id": "kiddo",
+  "device_id": "mac-mini",
+  "mqtt_host": "mqtt.home.local",
+  "mqtt_port": 1883,
+  "mqtt_username": "",
+  "mqtt_password": "",
+  "mqtt_tls": false,
+  "topic_prefix": "screen/kiddo",
+  "sample_interval_seconds": 15,
+  "idle_timeout_seconds": 180,
+  "enforcement_mode": "lock",
+  "fail_mode": "safe",
+  "offline_grace_period_seconds": 180,
+  "allowed_users": ["kiddo"],
+  "state_path": "~/Library/Application Support/ha-screen-agent/state.json",
+  "log_file": "/tmp/ha_screen_agent.out.log",
+  "err_log_file": "/tmp/ha_screen_agent.err.log"
+}

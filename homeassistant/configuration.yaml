@@ -1,0 +1,98 @@
+# Screen Time Enforcer Configuration for Home Assistant
+
+# Input Number for setting daily time limit (in minutes)
+input_number:
+  screentime_daily_limit:
+    name: "Daily Screen Time Limit (minutes)"
+    min: 30
+    max: 600
+    step: 15
+    mode: slider
+    unit_of_measurement: min
+    icon: mdi:timer
+
+# Input Number for setting break interval
+input_number:
+  screentime_break_interval:
+    name: "Break Interval (minutes)"
+    min: 15
+    max: 120
+    step: 5
+    mode: slider
+    unit_of_measurement: min
+    icon: mdi:timer-sand
+
+# Input Number for setting break duration
+input_number:
+  screentime_break_duration:
+    name: "Break Duration (minutes)"
+    min: 5
+    max: 30
+    step: 1
+    mode: slider
+    unit_of_measurement: min
+    icon: mdi:timer-sand-empty
+
+# Template sensor to track screen time
+sensor:
+  - platform: template
+    sensors:
+      screentime_today:
+        friendly_name: "Screen Time Today"
+        value_template: >-
+          {% set minutes = states('sensor.screentime_daily_usage') | float // 60 %}
+          {{ "%d:%02d" | format(minutes // 60, minutes % 60) }}
+        unit_of_measurement: "h"
+        icon_template: mdi:monitor
+
+# Automation to enforce screen time limits
+automation:
+  - alias: "Enforce Screen Time Limits"
+    trigger:
+      - platform: state
+        entity_id: sensor.screentime_daily_usage
+    action:
+      - service: notify.notify
+        data:
+          message: >
+            {% if states('sensor.screentime_daily_usage') | float >= states('input_number.screentime_daily_limit') | float * 60 %}
+              Screen time limit reached for today!
+            {% else %}
+              Screen time: {{ states('sensor.screentime_today') }}
+            {% endif %}
+
+# Example Lovelace card configuration
+lovelace:
+  mode: yaml
+  resources:
+    - url: /local/lovelace/screentime-card.js
+      type: module
+
+# Example dashboard view
+panel_custom:
+  - name: screentime-dashboard
+    sidebar_title: Screen Time
+    sidebar_icon: mdi:timer
+    url_path: screentime
+    config:
+      devices:
+        - device1: "Kid's MacBook"
+        - device2: "Family iMac"
+
+# Example REST API endpoints for the Mac client
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - ::1
+
+# Example API endpoint for the Mac client to report usage
+# This would be called by the Mac client to report usage data
+# api:
+#   use_x_forwarded_for: true
+#   trusted_networks:
+#     - 192.168.1.0/24
+#     - 172.16.0.0/12
+#     - 10.0.0.0/8
+#     - 127.0.0.1
+#     - ::1/128
