@@ -62,10 +62,13 @@ install -o root -g wheel -m 0755 "$PROJECT_DIR/screentime_enforcer.py" "$AGENT_P
 
 if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "Creating config at $CONFIG_PATH"
-    install -o root -g wheel -m 0644 "$CONFIG_SRC" "$CONFIG_PATH"
+    install -o root -g wheel -m 0600 "$CONFIG_SRC" "$CONFIG_PATH"
 else
     echo "Existing config preserved at $CONFIG_PATH"
 fi
+
+chown root:wheel "$CONFIG_PATH"
+chmod 0600 "$CONFIG_PATH"
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
     echo "Python 3 not found at $PYTHON_BIN" >&2

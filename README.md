@@ -58,7 +58,7 @@ Home Assistant owns the unified allow logic: `effective_allowed = override OR (b
 | `state_path` | ➖ | Local JSON cache of today’s minutes. Defaults to child’s `~/Library/Application Support/ha-screen-agent/state.json`. |
 | `log_file`, `err_log_file` | ➖ | Defaults `/tmp/ha_screen_agent.{out,err}.log`. |
 
-Edit this file as an admin (root:wheel, mode 0644). Children have read-only access, so MQTT ACLs should enforce topic permissions and secrets should be considered observable by the child.
+Edit this file as an admin (root:wheel, mode 0600). MQTT credentials remain unreadable to the child account; use sudo to view or edit.
 
 ---
 
@@ -158,7 +158,7 @@ automation:
 - The LaunchAgent lives in `/Library/LaunchAgents` (not user-writable) and is loaded into the child’s GUI session via `launchctl bootstrap gui/<uid> …`.
 - Default behavior is **fail-safe**: if MQTT disconnects longer than the configured grace period, the Mac is locked until connectivity returns.
 - Optional `allowed_users` list ensures the agent simply exits when run in unexpected sessions (e.g., parent admin login).
-- Because configuration is world-readable, do not store sensitive secrets beyond MQTT credentials already needed by the child’s device. Prefer broker-side ACLs per child/topic.
+- Config is installed as root:wheel 0600 so the child cannot read MQTT credentials; still enforce broker ACLs per child/topic.
 
 ---
 

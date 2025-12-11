@@ -340,7 +340,9 @@ class ScreenTimeAgent:
                     self.state.add_seconds(elapsed)
 
                 self._maybe_save_state()
-                self._publish_metrics_if_needed(force=not self._mqtt_connected)
+                self._publish_metrics_if_needed(
+                    active_now=active, force=not self._mqtt_connected
+                )
                 self._enforce_if_required(active_now=active)
 
                 sleep_time = max(1.0, float(self.config.sample_interval_seconds))
@@ -358,7 +360,7 @@ class ScreenTimeAgent:
             self.state.save()
             self._last_state_save = now
 
-    def _publish_metrics_if_needed(self, force: bool = False) -> None:
+    def _publish_metrics_if_needed(self, active_now: bool, force: bool = False) -> None:
         if not self._mqtt_connected:
             return
         minutes = self.state.minutes_today()
@@ -369,7 +371,7 @@ class ScreenTimeAgent:
                 self.config.minutes_topic, payload=str(minutes), retain=True, qos=1
             )
             self._last_minutes_published = minutes
-        active_flag = "1" if self._is_active_session() else "0"
+        active_flag = "1" if active_now else "0"
         self._mqtt_client.publish(
             self.config.active_topic, payload=active_flag, retain=False, qos=0
         )
