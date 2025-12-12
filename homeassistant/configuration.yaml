@@ -1,5 +1,5 @@
-# Example Home Assistant package for a single child.
-# Replace 'kiddo' and 'mac-mini' with your child_id and device_id from the agent config.
+# Home Assistant package example for two children
+# Replace child_id/device_id/topic_prefix values with your own. Keep the /mac tier so each device type stays isolated.
 
 mqtt:
   sensor:
@@ -8,6 +8,7 @@ mqtt:
       state_topic: "screen/kiddo/mac/mac-mini/minutes_today"
       unit_of_measurement: "min"
       qos: 1
+      icon: mdi:clock-time-ten-outline
   binary_sensor:
     - name: "Kiddo Mac Active"
       unique_id: kiddo_mac_active
@@ -15,6 +16,7 @@ mqtt:
       payload_on: "1"
       payload_off: "0"
       device_class: running
+      icon: mdi:clock-time-ten-outline
 
 input_number:
   kiddo_mac_daily_budget_minutes:

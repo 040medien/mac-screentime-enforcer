@@ -29,9 +29,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import paho.mqtt.client as mqtt
-from Quartz import (  # type: ignore
-    CGEventSourceSecondsSinceLastEvent,
+from Quartz.CoreGraphics import (  # type: ignore
+    CGEventSourceSecondsSinceLastEventType,
     CGSessionCopyCurrentDictionary,
+    kCGAnyInputEventType,
     kCGEventSourceStateHIDSystemState,
 )
 
@@ -427,8 +428,8 @@ class ScreenTimeAgent:
 
     def _is_active_session(self) -> bool:
         try:
-            idle_seconds = CGEventSourceSecondsSinceLastEvent(
-                kCGEventSourceStateHIDSystemState
+            idle_seconds = CGEventSourceSecondsSinceLastEventType(
+                kCGEventSourceStateHIDSystemState, kCGAnyInputEventType
             )
         except Exception:
             self.logger.exception("Unable to read idle timer; assuming inactive.")

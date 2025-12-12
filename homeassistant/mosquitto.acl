@@ -1,0 +1,16 @@
+# Example Mosquitto ACLs for the macOS Screen Time agent
+# Assumes broker uses a dedicated MQTT user for the agent (here: "kiddo").
+# This user can publish telemetry for their namespace and read the retained allow flag,
+# but cannot change allow/deny or touch any other child's topics.
+
+user kiddo
+# Allow publishing telemetry/status for this child/device
+# minutes_today, active, status, etc.
+topic write screen/kiddo/mac/#
+
+# Allow reading the retained allowed flag only
+topic read screen/kiddo/allowed
+
+# (Optional) deny everything else explicitly
+pattern write $
+pattern read $
