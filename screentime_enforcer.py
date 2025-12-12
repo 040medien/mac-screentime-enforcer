@@ -258,6 +258,8 @@ class ScreenTimeAgent:
         self._last_tick = time.monotonic()
         self._running = True
         self._ignored_retained_block = False
+        self._grace_until: Optional[float] = None
+        self._grace_final_warned = False
 
     # ------------------------------------------------------------------ MQTT --
 
@@ -394,8 +396,17 @@ class ScreenTimeAgent:
         self._allowed = allowed
         self._last_allowed_payload = payload
         self.logger.info("Allowed state updated to %s", allowed)
+
+        if allowed:
+            self._grace_until = None
+            self._grace_final_warned = False
+        else:
+            self._grace_until = time.monotonic() + 60
+            self._grace_final_warned = False
+            self._notify_grace_start()
+
         if previous is not None and previous != allowed and not allowed:
-            self._enforce_block()
+            return
 
     # ----------------------------------------------------------- MAIN LOOP --
 
@@ -484,7 +495,17 @@ class ScreenTimeAgent:
     def _enforce_if_required(self, active_now: bool) -> None:
         allowed = self._current_allowed_state()
         if allowed:
+            self._grace_until = None
+            self._grace_final_warned = False
             return
+
+        now = time.monotonic()
+        if self._grace_until is not None and now < self._grace_until:
+            return
+        if self._grace_until is not None and not self._grace_final_warned:
+            self._speak(f"You have used all your screen time {self.config.child_id}")
+            self._grace_final_warned = True
+        self._grace_until = None
         self._enforce_block(active_now=active_now)
 
     def _enforce_block(self, active_now: bool = False) -> None:
@@ -516,6 +537,31 @@ class ScreenTimeAgent:
         if self._is_session_locked():
             return False
         return True
+
+    def _notify_grace_start(self) -> None:
+        msg = "Screen time will end in 1 minute."
+        script = f'display notification "{msg}" with title "Screen Time"'
+        try:
+            subprocess.run(
+                ["/usr/bin/osascript", "-e", script],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self.logger.warning("Failed to show grace notification.", exc_info=True)
+        self._speak("Screen time will end in one minute")
+
+    def _speak(self, text: str) -> None:
+        try:
+            subprocess.run(
+                ["/usr/bin/say", text],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self.logger.warning("Failed to play voice alert.", exc_info=True)
 
     # ----------------------------------------------------------- ACTIONS --
 
