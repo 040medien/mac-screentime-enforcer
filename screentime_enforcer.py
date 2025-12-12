@@ -436,15 +436,16 @@ class ScreenTimeAgent:
         self,
         client: mqtt.Client,
         userdata: Any,
-        rc: int,
+        disconnect_flags: Any,
+        reason_code: mqtt.ReasonCode,
         properties: Optional[mqtt.Properties] = None,
     ):
-        rc_int = getattr(rc, "value", rc)
+        rc_int = getattr(reason_code, "value", reason_code)
         try:
             rc_int = int(rc_int)
         except Exception:
-            self.logger.warning("Unexpected reason_code type on disconnect: %r", rc)
-            rc_int = rc
+            self.logger.warning("Unexpected reason_code type on disconnect: %r", reason_code)
+            rc_int = reason_code
         self._mqtt_connected = False
         if rc_int != 0:
             self.logger.warning("Unexpected MQTT disconnect (rc=%s: %s)", rc_int, self._mqtt_rc_reason(rc_int))
