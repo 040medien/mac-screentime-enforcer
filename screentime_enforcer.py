@@ -320,7 +320,12 @@ class ScreenTimeAgent:
         reason_code: mqtt.ReasonCode,
         properties: Optional[mqtt.Properties] = None,
     ):
-        rc = int(reason_code)
+        rc = getattr(reason_code, "value", reason_code)
+        try:
+            rc = int(rc)
+        except Exception:
+            self.logger.warning("Unexpected reason_code type on connect: %r", reason_code)
+            rc = -1
         if rc == 0:
             self.logger.info("Connected to MQTT broker (rc=0: success).")
             self._mqtt_connected = True
@@ -344,9 +349,15 @@ class ScreenTimeAgent:
         rc: int,
         properties: Optional[mqtt.Properties] = None,
     ):
+        rc_int = getattr(rc, "value", rc)
+        try:
+            rc_int = int(rc_int)
+        except Exception:
+            self.logger.warning("Unexpected reason_code type on disconnect: %r", rc)
+            rc_int = rc
         self._mqtt_connected = False
-        if rc != 0:
-            self.logger.warning("Unexpected MQTT disconnect (rc=%s: %s)", rc, self._mqtt_rc_reason(rc))
+        if rc_int != 0:
+            self.logger.warning("Unexpected MQTT disconnect (rc=%s: %s)", rc_int, self._mqtt_rc_reason(rc_int))
         self._offline_since = time.monotonic()
 
     def _on_message(self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage):
