@@ -307,9 +307,18 @@ class ScreenTimeAgent:
             self.config.mqtt_host,
             self.config.mqtt_port,
         )
-        self._mqtt_client.connect_async(
-            self.config.mqtt_host, self.config.mqtt_port, keepalive=60
-        )
+        try:
+            self._mqtt_client.connect_async(
+                self.config.mqtt_host, self.config.mqtt_port, keepalive=60
+            )
+        except Exception as exc:
+            self.logger.error(
+                "Failed to start MQTT connection to %s:%s: %s",
+                self.config.mqtt_host,
+                self.config.mqtt_port,
+                exc,
+            )
+            return
         self._mqtt_client.loop_start()
 
     def _on_connect(
