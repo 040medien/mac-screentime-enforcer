@@ -259,7 +259,12 @@ class ScreenTimeAgent:
 
     def _build_mqtt_client(self) -> mqtt.Client:
         client_id = f"ha-screen-agent-{self.config.device_id}"
-        client = mqtt.Client(client_id=client_id, clean_session=True)
+        client = mqtt.Client(
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+            client_id=client_id,
+            protocol=mqtt.MQTTv311,
+            clean_session=True,
+        )
         if self.config.mqtt_username:
             client.username_pw_set(
                 self.config.mqtt_username, password=self.config.mqtt_password or None
@@ -455,8 +460,22 @@ class ScreenTimeAgent:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            return
         except subprocess.CalledProcessError as exc:
-            self.logger.error("Failed to lock screen via osascript: %s", exc)
+            self.logger.warning("osascript lock failed (%s); trying CGSession -suspend", exc)
+
+        try:
+            subprocess.run(
+                [
+                    "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession",
+                    "-suspend",
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError as exc:
+            self.logger.error("Failed to lock screen via CGSession: %s", exc)
 
     def _logout_session(self) -> None:
         self.logger.warning("Logging out session (allowed=0).")
