@@ -373,6 +373,20 @@ class ScreenTimeAgent:
                         "device": device,
                     },
                 ),
+                (
+                    "switch",
+                    f"{base_id}_parent_override",
+                    {
+                        "name": f"{self.config.child_id} Mac Parent Override",
+                        "unique_id": f"{base_id}_parent_override",
+                        "state_topic": f"homeassistant/{base_id}/override/state",
+                        "command_topic": f"homeassistant/{base_id}/override/set",
+                        "payload_on": "ON",
+                        "payload_off": "OFF",
+                        "icon": "mdi:shield-star",
+                        "device": device,
+                    },
+                ),
             ]
             for domain, obj_id, payload in disc:
                 topic = f"homeassistant/{domain}/{obj_id}/config"
