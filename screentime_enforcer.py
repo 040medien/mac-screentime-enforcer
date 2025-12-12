@@ -260,6 +260,7 @@ class ScreenTimeAgent:
         self._ignored_retained_block = False
         self._grace_until: Optional[float] = None
         self._grace_final_warned = False
+        self._discovery_published = False
 
     # ------------------------------------------------------------------ MQTT --
 
@@ -297,6 +298,83 @@ class ScreenTimeAgent:
             client.enable_logger(mqtt_logger)
             client.on_log = lambda c, u, level, buf: mqtt_logger.debug("paho log %s: %s", level, buf)
         return client
+
+    def _discovery_device(self) -> dict:
+        dev_id = f"{self.config.child_id}_{self.config.device_id}_mac"
+        return {
+            "identifiers": [dev_id],
+            "name": f"{self.config.child_id} mac",
+            "manufacturer": "Screen Time Agent",
+            "model": "macOS agent",
+            "sw_version": VERSION,
+        }
+
+    def _publish_discovery(self) -> None:
+        if self._discovery_published:
+            return
+        try:
+            device = self._discovery_device()
+            base_id = f"{self.config.child_id}_{self.config.device_id}_mac"
+            disc = [
+                (
+                    "sensor",
+                    f"{base_id}_minutes",
+                    {
+                        "name": f"{self.config.child_id} Mac Minutes",
+                        "unique_id": f"{base_id}_minutes",
+                        "state_topic": self.config.minutes_topic,
+                        "unit_of_measurement": "min",
+                        "device": device,
+                    },
+                ),
+                (
+                    "binary_sensor",
+                    f"{base_id}_active",
+                    {
+                        "name": f"{self.config.child_id} Mac Active",
+                        "unique_id": f"{base_id}_active",
+                        "state_topic": self.config.active_topic,
+                        "payload_on": "1",
+                        "payload_off": "0",
+                        "device_class": "running",
+                        "device": device,
+                    },
+                ),
+                (
+                    "switch",
+                    f"{base_id}_allowed",
+                    {
+                        "name": f"{self.config.child_id} Mac Allowed",
+                        "unique_id": f"{base_id}_allowed",
+                        "state_topic": self.config.allow_topic,
+                        "command_topic": self.config.allow_topic,
+                        "payload_on": "1",
+                        "payload_off": "0",
+                        "device": device,
+                    },
+                ),
+                (
+                    "number",
+                    f"{base_id}_allowed_number",
+                    {
+                        "name": f"{self.config.child_id} Mac Allowed (0/1)",
+                        "unique_id": f"{base_id}_allowed_number",
+                        "state_topic": self.config.allow_topic,
+                        "command_topic": self.config.allow_topic,
+                        "min": 0,
+                        "max": 1,
+                        "step": 1,
+                        "mode": "slider",
+                        "device": device,
+                    },
+                ),
+            ]
+            for domain, obj_id, payload in disc:
+                topic = f"homeassistant/{domain}/{obj_id}/config"
+                self._mqtt_client.publish(topic, json.dumps(payload), retain=True, qos=1)
+            self._discovery_published = True
+        except Exception:
+            self.logger.warning("Failed to publish MQTT discovery topics.", exc_info=True)
 
     def start(self) -> None:
         self.logger.info("Starting HA Screen Agent v%s", VERSION)
@@ -350,6 +428,7 @@ class ScreenTimeAgent:
                 qos=1,
                 retain=False,
             )
+            self._publish_discovery()
         else:
             self.logger.error("MQTT connection failed (rc=%s: %s)", rc, self._mqtt_rc_reason(rc))
 
