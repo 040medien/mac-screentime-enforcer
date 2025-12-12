@@ -62,13 +62,10 @@ install -o root -g wheel -m 0755 "$PROJECT_DIR/screentime_enforcer.py" "$AGENT_P
 
 if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "Creating config at $CONFIG_PATH"
-    install -o root -g wheel -m 0600 "$CONFIG_SRC" "$CONFIG_PATH"
+    install -o root -g wheel -m 0644 "$CONFIG_SRC" "$CONFIG_PATH"
 else
     echo "Existing config preserved at $CONFIG_PATH"
 fi
-
-chown root:wheel "$CONFIG_PATH"
-chmod 0600 "$CONFIG_PATH"
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
     echo "Python 3 not found at $PYTHON_BIN" >&2
@@ -136,6 +133,20 @@ for candidate in users:
         break
 PY
 )"
+
+CONFIG_GROUP="wheel"
+CONFIG_MODE="0644"
+if [[ -n "$CHILD_USER" && "$(id -un "$CHILD_USER" 2>/dev/null)" == "$CHILD_USER" ]]; then
+    CHILD_GROUP="$(id -gn "$CHILD_USER" 2>/dev/null || true)"
+    if [[ -n "$CHILD_GROUP" ]]; then
+        CONFIG_GROUP="$CHILD_GROUP"
+        CONFIG_MODE="0640"
+    fi
+fi
+
+chown root:"$CONFIG_GROUP" "$CONFIG_PATH"
+chmod "$CONFIG_MODE" "$CONFIG_PATH"
+echo "Config permissions set to $CONFIG_MODE (group: $CONFIG_GROUP)."
 
 if [[ -n "$CHILD_USER" ]]; then
     if id "$CHILD_USER" >/dev/null 2>&1; then
