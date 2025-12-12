@@ -257,6 +257,7 @@ class ScreenTimeAgent:
         self._last_state_save = 0.0
         self._last_tick = time.monotonic()
         self._running = True
+        self._ignored_retained_block = False
 
     # ------------------------------------------------------------------ MQTT --
 
@@ -311,11 +312,20 @@ class ScreenTimeAgent:
         )
         self._mqtt_client.loop_start()
 
-    def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Dict[str, Any], rc: int):
+    def _on_connect(
+        self,
+        client: mqtt.Client,
+        userdata: Any,
+        flags: Dict[str, Any],
+        reason_code: mqtt.ReasonCode,
+        properties: Optional[mqtt.Properties] = None,
+    ):
+        rc = int(reason_code)
         if rc == 0:
             self.logger.info("Connected to MQTT broker (rc=0: success).")
             self._mqtt_connected = True
             self._offline_since = None
+            self._ignored_retained_block = False
             client.subscribe(self.config.allow_topic)
             # Request retained allowed value ASAP
             client.publish(
@@ -327,7 +337,13 @@ class ScreenTimeAgent:
         else:
             self.logger.error("MQTT connection failed (rc=%s: %s)", rc, self._mqtt_rc_reason(rc))
 
-    def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc: int):
+    def _on_disconnect(
+        self,
+        client: mqtt.Client,
+        userdata: Any,
+        rc: int,
+        properties: Optional[mqtt.Properties] = None,
+    ):
         self._mqtt_connected = False
         if rc != 0:
             self.logger.warning("Unexpected MQTT disconnect (rc=%s: %s)", rc, self._mqtt_rc_reason(rc))
@@ -343,6 +359,17 @@ class ScreenTimeAgent:
                 message.topic,
             )
             return
+
+        if (
+            self.config.fail_mode == "open"
+            and allowed is False
+            and getattr(message, "retain", False)
+            and not self._ignored_retained_block
+        ):
+            self.logger.info("Ignoring retained allowed=0 on connect (fail_mode=open).")
+            self._ignored_retained_block = True
+            return
+
         previous = self._allowed
         self._allowed = allowed
         self._last_allowed_payload = payload
@@ -386,18 +413,21 @@ class ScreenTimeAgent:
             self._last_state_save = now
 
     def _publish_metrics_if_needed(self, active_now: bool, force: bool = False) -> None:
-        if not self._mqtt_connected:
-            return
         minutes = self.state.minutes_today()
         now = time.monotonic()
         heartbeat_due = now - self._last_status_publish >= 55
+        try:
+            publish_client = self._mqtt_client
+        except Exception:
+            return
+
         if force or self._last_minutes_published != minutes:
-            self._mqtt_client.publish(
+            publish_client.publish(
                 self.config.minutes_topic, payload=str(minutes), retain=True, qos=1
             )
             self._last_minutes_published = minutes
         active_flag = "1" if active_now else "0"
-        self._mqtt_client.publish(
+        publish_client.publish(
             self.config.active_topic, payload=active_flag, retain=False, qos=0
         )
         if heartbeat_due or force:
@@ -411,7 +441,7 @@ class ScreenTimeAgent:
                 "last_allowed_payload": self._last_allowed_payload,
                 "timestamp": _now_local().isoformat(),
             }
-            self._mqtt_client.publish(
+            publish_client.publish(
                 self.config.status_topic,
                 payload=json.dumps(status_payload),
                 retain=False,
@@ -456,11 +486,11 @@ class ScreenTimeAgent:
                 kCGEventSourceStateHIDSystemState, kCGAnyInputEventType
             )
         except Exception:
-            self.logger.exception("Unable to read idle timer; assuming inactive.")
-            idle_seconds = self.config.idle_timeout_seconds + 1
+            self.logger.exception("Unable to read idle timer; assuming active to keep accounting.")
+            return True
 
         if idle_seconds is None:
-            return False
+            return True
         if idle_seconds > self.config.idle_timeout_seconds:
             return False
         if self._is_session_locked():
