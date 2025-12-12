@@ -82,6 +82,7 @@ class AgentConfig:
     state_path: Path = DEFAULT_STATE_PATH
     log_file: str = DEFAULT_LOG_PATH
     err_log_file: str = DEFAULT_ERR_LOG_PATH
+    debug_mqtt: bool = False
 
     @classmethod
     def load(cls, path: Path) -> "AgentConfig":
@@ -142,6 +143,7 @@ class AgentConfig:
 
         log_file = data.get("log_file", DEFAULT_LOG_PATH)
         err_file = data.get("err_log_file", DEFAULT_ERR_LOG_PATH)
+        debug_mqtt = bool(data.get("debug_mqtt", False))
 
         allowed_users_raw = data.get("allowed_users")
         if allowed_users_raw is not None:
@@ -173,6 +175,7 @@ class AgentConfig:
             log_file=log_file,
             err_log_file=err_file,
             allowed_users=allowed_users,
+            debug_mqtt=debug_mqtt,
         )
 
     @property
@@ -257,6 +260,18 @@ class ScreenTimeAgent:
 
     # ------------------------------------------------------------------ MQTT --
 
+    @staticmethod
+    def _mqtt_rc_reason(rc: int) -> str:
+        rc_map = {
+            0: "success",
+            1: "incorrect protocol version",
+            2: "invalid client identifier",
+            3: "server unavailable",
+            4: "bad username or password",
+            5: "not authorized",
+        }
+        return rc_map.get(rc, "unknown")
+
     def _build_mqtt_client(self) -> mqtt.Client:
         client_id = f"ha-screen-agent-{self.config.device_id}"
         client = mqtt.Client(
@@ -274,6 +289,10 @@ class ScreenTimeAgent:
         client.on_connect = self._on_connect
         client.on_disconnect = self._on_disconnect
         client.on_message = self._on_message
+        if self.config.debug_mqtt:
+            mqtt_logger = logging.getLogger("ha-screen-agent.mqtt")
+            client.enable_logger(mqtt_logger)
+            client.on_log = lambda c, u, level, buf: mqtt_logger.debug("paho log %s: %s", level, buf)
         return client
 
     def start(self) -> None:
@@ -294,7 +313,7 @@ class ScreenTimeAgent:
 
     def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Dict[str, Any], rc: int):
         if rc == 0:
-            self.logger.info("Connected to MQTT broker.")
+            self.logger.info("Connected to MQTT broker (rc=0: success).")
             self._mqtt_connected = True
             self._offline_since = None
             client.subscribe(self.config.allow_topic)
@@ -306,12 +325,12 @@ class ScreenTimeAgent:
                 retain=False,
             )
         else:
-            self.logger.error("MQTT connection failed with rc=%s", rc)
+            self.logger.error("MQTT connection failed (rc=%s: %s)", rc, self._mqtt_rc_reason(rc))
 
     def _on_disconnect(self, client: mqtt.Client, userdata: Any, rc: int):
         self._mqtt_connected = False
         if rc != 0:
-            self.logger.warning("Unexpected MQTT disconnect (rc=%s).", rc)
+            self.logger.warning("Unexpected MQTT disconnect (rc=%s: %s)", rc, self._mqtt_rc_reason(rc))
         self._offline_since = time.monotonic()
 
     def _on_message(self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage):

@@ -57,6 +57,7 @@ Home Assistant owns the unified allow logic: `effective_allowed = override OR (b
 | `allowed_users` | ➖ | Array of macOS short names allowed to run the agent. Prevents the service from starting in other sessions. |
 | `state_path` | ➖ | Local JSON cache of today’s minutes. Defaults to child’s `~/Library/Application Support/ha-screen-agent/state.json`. |
 | `log_file`, `err_log_file` | ➖ | Defaults `/tmp/ha_screen_agent.{out,err}.log`. |
+| `debug_mqtt` | ➖ | Set true to enable verbose MQTT client debug logging. |
 
 Edit this file as an admin. Keep it root-owned and readable by the child account (e.g., root:<child_group>, mode 0640) so the LaunchAgent can load it.
 
