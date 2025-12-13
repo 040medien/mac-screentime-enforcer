@@ -28,6 +28,77 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_CONFIG_SRC="$PROJECT_DIR/config/agent.config.sample.json"
 CONFIG_SRC="$DEFAULT_CONFIG_SRC"
 
+
+prompt_boolean() {
+    local prompt default response
+    prompt="$1"; default="$2"
+    read -r -p "$prompt [$default]: " response || true
+    response=${response:-$default}
+    case "$response" in
+        [Yy]*) echo true ;;
+        *) echo false ;;
+    esac
+}
+
+build_config_interactive() {
+    echo "No existing config found. Let's create one." >&2
+    read -r -p "Child ID (e.g., kiddo): " CHILD_ID
+    CHILD_ID=${CHILD_ID:-kiddo}
+    read -r -p "Device ID [auto]: " DEVICE_ID
+    if [[ -z "$DEVICE_ID" ]]; then
+        DEVICE_ID=$(hostname -s | tr '[:upper:] ' '[:lower:]-' | tr -cd '[:alnum:]-_')
+        DEVICE_ID=${DEVICE_ID:-mac}
+    fi
+    read -r -p "MQTT host (hostname/IP): " MQTT_HOST
+    MQTT_HOST=${MQTT_HOST:-mqtt.local}
+    read -r -p "MQTT port [1883]: " MQTT_PORT
+    MQTT_PORT=${MQTT_PORT:-1883}
+    read -r -p "MQTT username (blank for none): " MQTT_USER
+    read -r -s -p "MQTT password (blank for none): " MQTT_PASS; echo
+    MQTT_TLS=$(prompt_boolean "Use MQTT TLS?" "n")
+    read -r -p "Topic prefix [screen/$CHILD_ID]: " TOPIC_PREFIX
+    TOPIC_PREFIX=${TOPIC_PREFIX:-screen/$CHILD_ID}
+    DEFAULT_ALLOWED=${SUDO_USER:-${USER:-$CHILD_ID}}
+    read -r -p "Allowed users (comma-separated) [$DEFAULT_ALLOWED]: " ALLOWED_USERS_RAW
+    ALLOWED_USERS_RAW=${ALLOWED_USERS_RAW:-$DEFAULT_ALLOWED}
+    TRACK_ACTIVE_APP=$(prompt_boolean "Publish frontmost app sensor?" "n")
+
+    ALLOWED_JSON=""
+    IFS=',' read -ra PARTS <<<"$ALLOWED_USERS_RAW"
+    for part in "${PARTS[@]}"; do
+        part=$(echo "$part" | xargs)
+        [[ -z "$part" ]] && continue
+        ALLOWED_JSON+="${ALLOWED_JSON:+, }"$part""
+    done
+    ALLOWED_JSON="[$ALLOWED_JSON]"
+
+    TMP_CONFIG=$(mktemp)
+    cat >"$TMP_CONFIG" <<EOF
+{
+  "child_id": "$CHILD_ID",
+  "device_id": "$DEVICE_ID",
+  "mqtt_host": "$MQTT_HOST",
+  "mqtt_port": $MQTT_PORT,
+  "mqtt_username": "$MQTT_USER",
+  "mqtt_password": "$MQTT_PASS",
+  "mqtt_tls": $MQTT_TLS,
+  "topic_prefix": "$TOPIC_PREFIX",
+  "sample_interval_seconds": 15,
+  "idle_timeout_seconds": 180,
+  "enforcement_mode": "lock",
+  "fail_mode": "safe",
+  "offline_grace_period_seconds": 180,
+  "allowed_users": $ALLOWED_JSON,
+  "state_path": "~/Library/Application Support/ha-screen-agent/state.json",
+  "log_file": "/tmp/ha_screen_agent.out.log",
+  "err_log_file": "/tmp/ha_screen_agent.err.log",
+  "debug_mqtt": false,
+  "track_active_app": $TRACK_ACTIVE_APP
+}
+EOF
+    CONFIG_SRC="$TMP_CONFIG"
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --config)
@@ -41,6 +112,18 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+CONFIG_SRC_INPUT=$CONFIG_SRC
+
+if [[ ! -f "$CONFIG_SRC" ]]; then
+    CONFIG_SRC=
+fi
+
+CONFIG_SRC="${CONFIG_SRC_INPUT:-$DEFAULT_CONFIG_SRC}"
+
+if [[ ! -f "$CONFIG_SRC" ]]; then
+    build_config_interactive
+fi
 
 if [[ ! -f "$CONFIG_SRC" ]]; then
     echo "Config source '$CONFIG_SRC' does not exist." >&2

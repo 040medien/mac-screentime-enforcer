@@ -60,7 +60,7 @@ Home Assistant owns the unified allow logic: `effective_allowed = override OR (b
 | `debug_mqtt` | ➖ | Set true to enable verbose MQTT client debug logging. |
 | `track_active_app` | ➖ | Set true to publish the frontmost app name to MQTT (discovery sensor enabled). |
 
-Edit this file as an admin. Keep it root-owned and readable by the child account (e.g., root:<child_group>, mode 0640) so the LaunchAgent can load it.
+Edit this file as an admin. The installer will now prompt for basic settings (child/device IDs, MQTT host/creds, allowed_users, optional active app sensor) if no config exists. Keep it root-owned and readable by the child account (e.g., root:<child_group>, mode 0640) so the LaunchAgent can load it.
 
 ---
 
@@ -164,4 +164,4 @@ pattern read  $
 
 ## License
 
-MIT — see `LICENSE` (or add one if distributing publicly).
+GPL-3.0 — see `LICENSE`.
