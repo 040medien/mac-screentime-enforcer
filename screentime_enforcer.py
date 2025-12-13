@@ -49,8 +49,6 @@ DEFAULT_ERR_LOG_PATH = "/tmp/ha_screen_agent.err.log"
 SUPPORTED_LANG_PHRASES = {
     "en": {
         "title": "Screen Time",
-        "grace_body": "Screen time will end in 1 minute.",
-        "grace_voice": "Screen time will end in one minute.",
         "final_voice": "You have used all your screen time {child_id}.",
         "warn5_body": "5 minutes of screen time remain.",
         "warn5_voice": "You have five minutes of screen time left.",
@@ -59,8 +57,6 @@ SUPPORTED_LANG_PHRASES = {
     },
     "de": {
         "title": "Bildschirmzeit",
-        "grace_body": "Bildschirmzeit endet in 1 Minute.",
-        "grace_voice": "Die Bildschirmzeit endet in einer Minute.",
         "final_voice": "Du hast deine Bildschirmzeit aufgebraucht {child_id}.",
         "warn5_body": "Noch 5 Minuten Bildschirmzeit übrig.",
         "warn5_voice": "Du hast noch fünf Minuten Bildschirmzeit.",
@@ -69,8 +65,6 @@ SUPPORTED_LANG_PHRASES = {
     },
     "fr": {
         "title": "Temps d'écran",
-        "grace_body": "Le temps d'écran se termine dans 1 minute.",
-        "grace_voice": "Le temps d'écran se termine dans une minute.",
         "final_voice": "Tu as utilisé tout ton temps d'écran {child_id}.",
         "warn5_body": "Il reste 5 minutes de temps d'écran.",
         "warn5_voice": "Il te reste cinq minutes de temps d'écran.",
@@ -79,8 +73,6 @@ SUPPORTED_LANG_PHRASES = {
     },
     "es": {
         "title": "Tiempo de pantalla",
-        "grace_body": "El tiempo de pantalla terminará en 1 minuto.",
-        "grace_voice": "El tiempo de pantalla terminará en un minuto.",
         "final_voice": "Has usado todo tu tiempo de pantalla {child_id}.",
         "warn5_body": "Quedan 5 minutos de tiempo de pantalla.",
         "warn5_voice": "Te quedan cinco minutos de tiempo de pantalla.",
@@ -89,8 +81,6 @@ SUPPORTED_LANG_PHRASES = {
     },
     "it": {
         "title": "Tempo schermo",
-        "grace_body": "Il tempo schermo finirà tra 1 minuto.",
-        "grace_voice": "Il tempo schermo finirà tra un minuto.",
         "final_voice": "Hai usato tutto il tempo schermo {child_id}.",
         "warn5_body": "Restano 5 minuti di tempo schermo.",
         "warn5_voice": "Ti restano cinque minuti di tempo schermo.",
@@ -99,8 +89,6 @@ SUPPORTED_LANG_PHRASES = {
     },
     "nl": {
         "title": "Schermtijd",
-        "grace_body": "Schermtijd eindigt over 1 minuut.",
-        "grace_voice": "Schermtijd eindigt over een minuut.",
         "final_voice": "Je hebt al je schermtijd gebruikt {child_id}.",
         "warn5_body": "Nog 5 minuten schermtijd over.",
         "warn5_voice": "Je hebt nog vijf minuten schermtijd.",
@@ -109,8 +97,6 @@ SUPPORTED_LANG_PHRASES = {
     },
     "pt": {
         "title": "Tempo de tela",
-        "grace_body": "O tempo de tela termina em 1 minuto.",
-        "grace_voice": "O tempo de tela termina em um minuto.",
         "final_voice": "Você usou todo o seu tempo de tela {child_id}.",
         "warn5_body": "Restam 5 minutos de tempo de tela.",
         "warn5_voice": "Você tem cinco minutos de tempo de tela restantes.",
@@ -119,8 +105,6 @@ SUPPORTED_LANG_PHRASES = {
     },
     "ja": {
         "title": "スクリーンタイム",
-        "grace_body": "1分後にスクリーンタイムが終了します。",
-        "grace_voice": "1分後にスクリーンタイムが終わります。",
         "final_voice": "{child_id} のスクリーンタイムを使い切りました。",
         "warn5_body": "スクリーンタイムはあと5分です。",
         "warn5_voice": "スクリーンタイムはあと5分です。",
@@ -129,8 +113,6 @@ SUPPORTED_LANG_PHRASES = {
     },
     "zh": {
         "title": "屏幕使用时间",
-        "grace_body": "屏幕时间将在1分钟后结束。",
-        "grace_voice": "屏幕时间将在一分钟后结束。",
         "final_voice": "你已用完所有屏幕时间 {child_id}。",
         "warn5_body": "屏幕时间还剩 5 分钟。",
         "warn5_voice": "屏幕时间还剩五分钟。",
@@ -394,8 +376,6 @@ class ScreenTimeAgent:
         self._running = True
         self._ignored_retained_block = False
         self._language = _detect_language()
-        self._grace_until: Optional[float] = None
-        self._grace_final_warned = False
         self._discovery_published = False
         self._budget_minutes: Optional[float] = None
         self._warned_5 = False
@@ -656,8 +636,6 @@ class ScreenTimeAgent:
         self._last_allowed_payload = payload
         self.logger.info("Allowed state updated to %s", allowed)
 
-        self._grace_until = None
-        self._grace_final_warned = False
 
         if previous is not None and previous != allowed and not allowed:
             self._enforce_block()
@@ -818,21 +796,6 @@ class ScreenTimeAgent:
             except Exception:
                 self.logger.warning("Failed to show remaining-time notification.", exc_info=True)
         self._speak(self._phrase(voice_key))
-
-    def _notify_grace_start(self) -> None:
-        msg = self._phrase("grace_body")
-        title = self._phrase("title")
-        script = f'display notification "{msg}" with title "{title}"'
-        try:
-            subprocess.run(
-                ["/usr/bin/osascript", "-e", script],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            self.logger.warning("Failed to show grace notification.", exc_info=True)
-        self._speak(self._phrase("grace_voice"))
 
     def _speak(self, text: str) -> None:
         try:
