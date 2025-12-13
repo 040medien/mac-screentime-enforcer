@@ -122,7 +122,8 @@ CONFIG_SRC_INPUT=${CONFIG_SRC:-}
 
 CONFIG_SRC="$CONFIG_SRC_INPUT"
 
-AGENT_DIR="/Library Application Support/ha-screen-agent"
+# Store agent assets in the standard Application Support location under /Library.
+AGENT_DIR="/Library/Application Support/ha-screen-agent"
 AGENT_PATH="$AGENT_DIR/agent.py"
 CONFIG_PATH="$AGENT_DIR/config.json"
 
