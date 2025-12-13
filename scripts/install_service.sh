@@ -43,6 +43,7 @@ prompt_boolean() {
 
 build_config_interactive() {
     echo "No existing config found. Let's create one." >&2
+    echo "Press enter to accept the default value." >&2
     read -r -p "Child ID (e.g., kiddo): " CHILD_ID
     CHILD_ID=${CHILD_ID:-kiddo}
     read -r -p "Device ID [auto]: " DEVICE_ID
@@ -55,11 +56,11 @@ build_config_interactive() {
     read -r -p "MQTT port [1883]: " MQTT_PORT
     MQTT_PORT=${MQTT_PORT:-1883}
     read -r -p "MQTT username (blank for none): " MQTT_USER
-    read -r -s -p "MQTT password (blank for none): " MQTT_PASS; echo
+    read -r -s -p "MQTT password (not shown, blank for none): " MQTT_PASS; echo
     MQTT_TLS=$(prompt_boolean "Use MQTT TLS?" "n")
     read -r -p "Topic prefix [screen/$CHILD_ID]: " TOPIC_PREFIX
     TOPIC_PREFIX=${TOPIC_PREFIX:-screen/$CHILD_ID}
-    DEFAULT_ALLOWED=${SUDO_USER:-${USER:-$CHILD_ID}}
+    DEFAULT_ALLOWED="[$CHILD_ID]"
     read -r -p "Allowed users (comma-separated) [$DEFAULT_ALLOWED]: " ALLOWED_USERS_RAW
     ALLOWED_USERS_RAW=${ALLOWED_USERS_RAW:-$DEFAULT_ALLOWED}
     TRACK_ACTIVE_APP=$(prompt_boolean "Publish frontmost app sensor?" "n")
