@@ -64,40 +64,43 @@ Edit this file as an admin. Keep it root-owned and readable by the child account
 
 ---
 
+## Requirements
+
+- macOS device with a **parent admin** account and a **child non-admin** account.
+- Home Assistant with MQTT discovery enabled and a Mosquitto broker.
+- MQTT credentials for the child’s namespace (host/port/username/password, TLS if used).
+- Internet access to install Apple Command Line Tools (one-time).
+
 ## Installation (parent admin account)
 
-1. **Clone repo** (anywhere parents can access):
+1. **Install Apple Command Line Tools** (once):
+   ```bash
+   xcode-select --install
+   ```
+2. **Download the agent**:
    ```bash
    git clone https://github.com/your-org/mac-screentime-enforcer.git
    cd mac-screentime-enforcer
    ```
-
-2. **Run installer as root** (first time copies sample config; subsequent runs perform upgrades):
+3. **Install as root** (first run creates config, later runs upgrade):
    ```bash
    sudo ./scripts/install_service.sh
-   # or provide your pre-written config
-   sudo ./scripts/install_service.sh --config /path/to/ha-screen-agent-config.json
    ```
-
-   The installer performs:
-   - Copies `screentime_enforcer.py` → `/Library/Application Support/ha-screen-agent/agent.py`
-   - (First run) copies config sample → `/Library/Application Support/ha-screen-agent/config.json`
-   - Creates virtualenv + installs deps under the same directory
-   - Writes LaunchAgent plist to `/Library/LaunchAgents/com.ha.screen-agent.plist`
-   - Boots the LaunchAgent inside the child’s GUI session if `allowed_users` contains a valid account
-
-3. **Edit config** at `/Library/Application Support/ha-screen-agent/config.json`.
-   - Set `child_id`, `device_id`, MQTT host/credentials, and optionally `allowed_users`.
-   - Ensure the MQTT broker retains `screen/<child>/allowed` and enforces ACLs.
-
-4. **Log in as the child user** (standard account) and verify the agent is running:
+4. **Edit config as root** at `/Library/Application Support/ha-screen-agent/config.json`:
+   - Set `child_id`, `device_id`, MQTT host/credentials, `allowed_users` (child short name), and optional `track_active_app`.
+5. **Re-run installer as root** to apply config/upgrade:
+   ```bash
+   sudo ./scripts/install_service.sh
+   ```
+6. **Log in as the child** (standard user) and verify the agent is running:
    ```bash
    log show --predicate 'process == "python3"' --last 5m | grep ha-screen-agent
    ```
+7. **Home Assistant**: discovery will create the Mac device and entities. Add/confirm your HA automations (budget, schedule, reset) to drive the `allowed` topic.
 
-5. **Test enforcement**:
-   - Publish retained `screen/<child>/allowed = 0` → Mac locks within ~5 s.
-   - Publish `screen/<child>/allowed = 1` → child can log back in.
+Optional: **MQTT ACLs per child** (recommended)
+- Restricts the agent to its own topics/discovery payloads so the child cannot alter other data.
+- See the ACL example below; repeat per child with their username/topic prefix.
 
 Logs live in `/tmp/ha_screen_agent.{out,err}.log`. Usage state persists under the child’s Library folder so counters survive restarts but reset automatically at local midnight.
 
