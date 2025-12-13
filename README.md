@@ -103,6 +103,24 @@ Logs live in `/tmp/ha_screen_agent.{out,err}.log`. Usage state persists under th
 
 MQTT discovery: with HA MQTT discovery enabled, the agent creates a device (`<child> mac`) with entities: sensor minutes, binary sensor active, switch allowed, number daily budget (HA-managed), switch parent override (HA-managed), and (optional) frontmost app sensor when `track_active_app=true`.
 
+Example Mosquitto ACL (replace `kiddo` + device namespace):
+
+```
+user kiddo
+# Allow publishing telemetry/status for this child/device (minutes, active, status)
+topic write screen/kiddo/mac/#
+# Allow reading the retained allowed flag only
+topic read  screen/kiddo/allowed
+# Allow MQTT discovery configs
+topic write homeassistant/+/+/config
+# Allow reading current budget (HA-managed number state)
+topic read  homeassistant/+/+/state
+
+# Deny everything else explicitly
+pattern write $
+pattern read  $
+```
+
 ---
 
 ## Home Assistant integration checklist
