@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import locale
 import platform
 import signal
 import subprocess
@@ -43,6 +44,94 @@ DEFAULT_STATE_PATH = (
 )
 DEFAULT_LOG_PATH = "/tmp/ha_screen_agent.out.log"
 DEFAULT_ERR_LOG_PATH = "/tmp/ha_screen_agent.err.log"
+
+
+SUPPORTED_LANG_PHRASES = {
+    "en": {
+        "title": "Screen Time",
+        "grace_body": "Screen time will end in 1 minute.",
+        "grace_voice": "Screen time will end in one minute.",
+        "final_voice": "You have used all your screen time {child_id}.",
+    },
+    "de": {
+        "title": "Bildschirmzeit",
+        "grace_body": "Bildschirmzeit endet in 1 Minute.",
+        "grace_voice": "Die Bildschirmzeit endet in einer Minute.",
+        "final_voice": "Du hast deine Bildschirmzeit aufgebraucht {child_id}.",
+    },
+    "fr": {
+        "title": "Temps d'écran",
+        "grace_body": "Le temps d'écran se termine dans 1 minute.",
+        "grace_voice": "Le temps d'écran se termine dans une minute.",
+        "final_voice": "Tu as utilisé tout ton temps d'écran {child_id}.",
+    },
+    "es": {
+        "title": "Tiempo de pantalla",
+        "grace_body": "El tiempo de pantalla terminará en 1 minuto.",
+        "grace_voice": "El tiempo de pantalla terminará en un minuto.",
+        "final_voice": "Has usado todo tu tiempo de pantalla {child_id}.",
+    },
+    "it": {
+        "title": "Tempo schermo",
+        "grace_body": "Il tempo schermo finirà tra 1 minuto.",
+        "grace_voice": "Il tempo schermo finirà tra un minuto.",
+        "final_voice": "Hai usato tutto il tempo schermo {child_id}.",
+    },
+    "nl": {
+        "title": "Schermtijd",
+        "grace_body": "Schermtijd eindigt over 1 minuut.",
+        "grace_voice": "Schermtijd eindigt over een minuut.",
+        "final_voice": "Je hebt al je schermtijd gebruikt {child_id}.",
+    },
+    "pt": {
+        "title": "Tempo de tela",
+        "grace_body": "O tempo de tela termina em 1 minuto.",
+        "grace_voice": "O tempo de tela termina em um minuto.",
+        "final_voice": "Você usou todo o seu tempo de tela {child_id}.",
+    },
+    "ja": {
+        "title": "スクリーンタイム",
+        "grace_body": "1分後にスクリーンタイムが終了します。",
+        "grace_voice": "1分後にスクリーンタイムが終わります。",
+        "final_voice": "{child_id} のスクリーンタイムを使い切りました。",
+    },
+    "zh": {
+        "title": "屏幕使用时间",
+        "grace_body": "屏幕时间将在1分钟后结束。",
+        "grace_voice": "屏幕时间将在一分钟后结束。",
+        "final_voice": "你已用完所有屏幕时间 {child_id}。",
+    },
+}
+
+
+def _normalize_lang(value: str) -> str:
+    if not value:
+        return "en"
+    value = value.split(',')[0]
+    for sep in ('-','_'):
+        if sep in value:
+            value = value.split(sep)[0]
+            break
+    return value.lower() or "en"
+
+
+def _detect_language() -> str:
+    candidates = []
+    for key in ("LANGUAGE", "LANG", "APPLELANGUAGE"):
+        val = os.environ.get(key)
+        if val:
+            candidates.append(val)
+    try:
+        loc = locale.getdefaultlocale()[0]
+        if loc:
+            candidates.append(loc)
+    except Exception:
+        pass
+    for cand in candidates:
+        code = _normalize_lang(cand)
+        if code in SUPPORTED_LANG_PHRASES:
+            return code
+    return "en"
 
 
 def _sanitize_device_id(value: str) -> str:
@@ -258,9 +347,17 @@ class ScreenTimeAgent:
         self._last_tick = time.monotonic()
         self._running = True
         self._ignored_retained_block = False
+        self._language = _detect_language()
         self._grace_until: Optional[float] = None
         self._grace_final_warned = False
         self._discovery_published = False
+
+    def _phrase(self, key: str) -> str:
+        lang = self._language if self._language in SUPPORTED_LANG_PHRASES else "en"
+        try:
+            return SUPPORTED_LANG_PHRASES[lang][key]
+        except Exception:
+            return SUPPORTED_LANG_PHRASES["en"].get(key, "")
 
     # ------------------------------------------------------------------ MQTT --
 
@@ -439,6 +536,7 @@ class ScreenTimeAgent:
             self._mqtt_connected = True
             self._offline_since = None
             self._ignored_retained_block = False
+        self._language = _detect_language()
             client.subscribe(self.config.allow_topic)
             # Request retained allowed value ASAP
             client.publish(
@@ -602,7 +700,7 @@ class ScreenTimeAgent:
         if self._grace_until is not None and now < self._grace_until:
             return
         if self._grace_until is not None and not self._grace_final_warned:
-            self._speak(f"You have used all your screen time {self.config.child_id}")
+            self._speak(self._phrase("final_voice").format(child_id=self.config.child_id))
             self._grace_final_warned = True
         self._grace_until = None
         self._enforce_block(active_now=active_now)
@@ -638,8 +736,9 @@ class ScreenTimeAgent:
         return True
 
     def _notify_grace_start(self) -> None:
-        msg = "Screen time will end in 1 minute."
-        script = f'display notification "{msg}" with title "Screen Time"'
+        msg = self._phrase("grace_body")
+        title = self._phrase("title")
+        script = f'display notification "{msg}" with title "{title}"'
         try:
             subprocess.run(
                 ["/usr/bin/osascript", "-e", script],
@@ -649,7 +748,7 @@ class ScreenTimeAgent:
             )
         except Exception:
             self.logger.warning("Failed to show grace notification.", exc_info=True)
-        self._speak("Screen time will end in one minute")
+        self._speak(self._phrase("grace_voice"))
 
     def _speak(self, text: str) -> None:
         try:
