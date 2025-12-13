@@ -431,6 +431,8 @@ class ScreenTimeAgent:
             protocol=mqtt.MQTTv311,
             clean_session=True,
         )
+        # Ensure HA receives an inactive state if the agent dies unexpectedly.
+        client.will_set(self.config.active_topic, payload="0", qos=1, retain=True)
         if self.config.mqtt_username:
             client.username_pw_set(
                 self.config.mqtt_username, password=self.config.mqtt_password or None
@@ -753,7 +755,7 @@ class ScreenTimeAgent:
             self._last_minutes_published = minutes
         active_flag = "1" if active_now else "0"
         publish_client.publish(
-            self.config.active_topic, payload=active_flag, retain=False, qos=0
+            self.config.active_topic, payload=active_flag, retain=True, qos=1
         )
         if self.config.track_active_app and active_app is not None:
             if force or active_app != self._last_active_app:
@@ -920,12 +922,36 @@ class ScreenTimeAgent:
 
     # ---------------------------------------------------------- SHUTDOWN --
 
+    def _publish_offline_state(self) -> None:
+        try:
+            payload = {
+                "status": "offline",
+                "version": VERSION,
+                "child_id": self.config.child_id,
+                "device_id": self.config.device_id,
+                "timestamp": _now_local().isoformat(),
+            }
+            client = self._mqtt_client
+            client.publish(self.config.active_topic, payload="0", retain=True, qos=1)
+            client.publish(
+                self.config.status_topic,
+                payload=json.dumps(payload),
+                retain=True,
+                qos=1,
+            )
+        except Exception:
+            self.logger.debug("Unable to publish offline state during shutdown.", exc_info=True)
+
     def _shutdown(self) -> None:
         self._running = False
         self.state.save()
         try:
-            self._mqtt_client.loop_stop()
+            self._publish_offline_state()
+        except Exception:
+            self.logger.debug("Failed to publish offline state on shutdown.", exc_info=True)
+        try:
             self._mqtt_client.disconnect()
+            self._mqtt_client.loop_stop()
         except Exception:
             self.logger.warning("Error while shutting down MQTT.", exc_info=True)
 
