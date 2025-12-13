@@ -52,56 +52,94 @@ SUPPORTED_LANG_PHRASES = {
         "grace_body": "Screen time will end in 1 minute.",
         "grace_voice": "Screen time will end in one minute.",
         "final_voice": "You have used all your screen time {child_id}.",
+        "warn5_body": "5 minutes of screen time remain.",
+        "warn5_voice": "You have five minutes of screen time left.",
+        "warn1_body": "1 minute of screen time remains.",
+        "warn1_voice": "You have one minute of screen time left.",
     },
     "de": {
         "title": "Bildschirmzeit",
         "grace_body": "Bildschirmzeit endet in 1 Minute.",
         "grace_voice": "Die Bildschirmzeit endet in einer Minute.",
         "final_voice": "Du hast deine Bildschirmzeit aufgebraucht {child_id}.",
+        "warn5_body": "Noch 5 Minuten Bildschirmzeit übrig.",
+        "warn5_voice": "Du hast noch fünf Minuten Bildschirmzeit.",
+        "warn1_body": "Noch 1 Minute Bildschirmzeit übrig.",
+        "warn1_voice": "Du hast noch eine Minute Bildschirmzeit.",
     },
     "fr": {
         "title": "Temps d'écran",
         "grace_body": "Le temps d'écran se termine dans 1 minute.",
         "grace_voice": "Le temps d'écran se termine dans une minute.",
         "final_voice": "Tu as utilisé tout ton temps d'écran {child_id}.",
+        "warn5_body": "Il reste 5 minutes de temps d'écran.",
+        "warn5_voice": "Il te reste cinq minutes de temps d'écran.",
+        "warn1_body": "Il reste 1 minute de temps d'écran.",
+        "warn1_voice": "Il te reste une minute de temps d'écran.",
     },
     "es": {
         "title": "Tiempo de pantalla",
         "grace_body": "El tiempo de pantalla terminará en 1 minuto.",
         "grace_voice": "El tiempo de pantalla terminará en un minuto.",
         "final_voice": "Has usado todo tu tiempo de pantalla {child_id}.",
+        "warn5_body": "Quedan 5 minutos de tiempo de pantalla.",
+        "warn5_voice": "Te quedan cinco minutos de tiempo de pantalla.",
+        "warn1_body": "Queda 1 minuto de tiempo de pantalla.",
+        "warn1_voice": "Te queda un minuto de tiempo de pantalla.",
     },
     "it": {
         "title": "Tempo schermo",
         "grace_body": "Il tempo schermo finirà tra 1 minuto.",
         "grace_voice": "Il tempo schermo finirà tra un minuto.",
         "final_voice": "Hai usato tutto il tempo schermo {child_id}.",
+        "warn5_body": "Restano 5 minuti di tempo schermo.",
+        "warn5_voice": "Ti restano cinque minuti di tempo schermo.",
+        "warn1_body": "Resta 1 minuto di tempo schermo.",
+        "warn1_voice": "Ti resta un minuto di tempo schermo.",
     },
     "nl": {
         "title": "Schermtijd",
         "grace_body": "Schermtijd eindigt over 1 minuut.",
         "grace_voice": "Schermtijd eindigt over een minuut.",
         "final_voice": "Je hebt al je schermtijd gebruikt {child_id}.",
+        "warn5_body": "Nog 5 minuten schermtijd over.",
+        "warn5_voice": "Je hebt nog vijf minuten schermtijd.",
+        "warn1_body": "Nog 1 minuut schermtijd over.",
+        "warn1_voice": "Je hebt nog één minuut schermtijd.",
     },
     "pt": {
         "title": "Tempo de tela",
         "grace_body": "O tempo de tela termina em 1 minuto.",
         "grace_voice": "O tempo de tela termina em um minuto.",
         "final_voice": "Você usou todo o seu tempo de tela {child_id}.",
+        "warn5_body": "Restam 5 minutos de tempo de tela.",
+        "warn5_voice": "Você tem cinco minutos de tempo de tela restantes.",
+        "warn1_body": "Resta 1 minuto de tempo de tela.",
+        "warn1_voice": "Você tem um minuto de tempo de tela restante.",
     },
     "ja": {
         "title": "スクリーンタイム",
         "grace_body": "1分後にスクリーンタイムが終了します。",
         "grace_voice": "1分後にスクリーンタイムが終わります。",
         "final_voice": "{child_id} のスクリーンタイムを使い切りました。",
+        "warn5_body": "スクリーンタイムはあと5分です。",
+        "warn5_voice": "スクリーンタイムはあと5分です。",
+        "warn1_body": "スクリーンタイムはあと1分です。",
+        "warn1_voice": "スクリーンタイムはあと1分です。",
     },
     "zh": {
         "title": "屏幕使用时间",
         "grace_body": "屏幕时间将在1分钟后结束。",
         "grace_voice": "屏幕时间将在一分钟后结束。",
         "final_voice": "你已用完所有屏幕时间 {child_id}。",
+        "warn5_body": "屏幕时间还剩 5 分钟。",
+        "warn5_voice": "屏幕时间还剩五分钟。",
+        "warn1_body": "屏幕时间还剩 1 分钟。",
+        "warn1_voice": "屏幕时间还剩一分钟。",
     },
 }
+
+
 
 
 def _normalize_lang(value: str) -> str:
@@ -283,6 +321,14 @@ class AgentConfig:
     def allow_topic(self) -> str:
         return f"{self.topic_prefix}/allowed"
 
+    @property
+    def discovery_base_id(self) -> str:
+        return f"{self.child_id}_{self.device_id}_mac"
+
+    @property
+    def budget_state_topic(self) -> str:
+        return f"homeassistant/{self.discovery_base_id}/daily_budget/state"
+
 
 class UsageState:
     def __init__(self, path: Path):
@@ -351,6 +397,9 @@ class ScreenTimeAgent:
         self._grace_until: Optional[float] = None
         self._grace_final_warned = False
         self._discovery_published = False
+        self._budget_minutes: Optional[float] = None
+        self._warned_5 = False
+        self._warned_1 = False
 
     def _phrase(self, key: str) -> str:
         lang = self._language if self._language in SUPPORTED_LANG_PHRASES else "en"
@@ -536,8 +585,9 @@ class ScreenTimeAgent:
             self._mqtt_connected = True
             self._offline_since = None
             self._ignored_retained_block = False
-        self._language = _detect_language()
+            self._language = _detect_language()
             client.subscribe(self.config.allow_topic)
+            client.subscribe(self.config.budget_state_topic)
             # Request retained allowed value ASAP
             client.publish(
                 self.config.status_topic,
@@ -570,6 +620,18 @@ class ScreenTimeAgent:
 
     def _on_message(self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage):
         payload = (message.payload or b"").decode("utf-8", errors="ignore")
+
+        if message.topic == self.config.budget_state_topic:
+            try:
+                budget_val = float(payload)
+            except Exception:
+                self.logger.warning("Invalid budget payload '%s' on %s", payload, message.topic)
+                return
+            self._budget_minutes = max(0.0, budget_val)
+            self._warned_5 = False
+            self._warned_1 = False
+            return
+
         allowed = _as_bool(payload)
         if allowed is None:
             self.logger.warning(
@@ -594,16 +656,11 @@ class ScreenTimeAgent:
         self._last_allowed_payload = payload
         self.logger.info("Allowed state updated to %s", allowed)
 
-        if allowed:
-            self._grace_until = None
-            self._grace_final_warned = False
-        else:
-            self._grace_until = time.monotonic() + 60
-            self._grace_final_warned = False
-            self._notify_grace_start()
+        self._grace_until = None
+        self._grace_final_warned = False
 
         if previous is not None and previous != allowed and not allowed:
-            return
+            self._enforce_block()
 
     # ----------------------------------------------------------- MAIN LOOP --
 
@@ -618,6 +675,9 @@ class ScreenTimeAgent:
                 active = self._is_active_session()
                 if active:
                     self.state.add_seconds(elapsed)
+
+                minutes_now = self.state.minutes_today()
+                self._check_budget_warnings(minutes_today=minutes_now)
 
                 self._maybe_save_state()
                 self._publish_metrics_if_needed(
@@ -639,6 +699,22 @@ class ScreenTimeAgent:
         if now - self._last_state_save >= 30:
             self.state.save()
             self._last_state_save = now
+
+    def _check_budget_warnings(self, minutes_today: int) -> None:
+        if self._budget_minutes is None:
+            return
+        remaining = self._budget_minutes - minutes_today
+        if remaining <= 1 and not self._warned_1:
+            self._notify_remaining(1, voice_only=True)
+            self._warned_1 = True
+            self._warned_5 = True
+        elif remaining <= 5 and not self._warned_5:
+            self._notify_remaining(5, voice_only=False)
+            self._warned_5 = True
+        if remaining > 5:
+            self._warned_5 = False
+        if remaining > 1:
+            self._warned_1 = False
 
     def _publish_metrics_if_needed(self, active_now: bool, force: bool = False) -> None:
         minutes = self.state.minutes_today()
@@ -692,17 +768,7 @@ class ScreenTimeAgent:
     def _enforce_if_required(self, active_now: bool) -> None:
         allowed = self._current_allowed_state()
         if allowed:
-            self._grace_until = None
-            self._grace_final_warned = False
             return
-
-        now = time.monotonic()
-        if self._grace_until is not None and now < self._grace_until:
-            return
-        if self._grace_until is not None and not self._grace_final_warned:
-            self._speak(self._phrase("final_voice").format(child_id=self.config.child_id))
-            self._grace_final_warned = True
-        self._grace_until = None
         self._enforce_block(active_now=active_now)
 
     def _enforce_block(self, active_now: bool = False) -> None:
@@ -734,6 +800,24 @@ class ScreenTimeAgent:
         if self._is_session_locked():
             return False
         return True
+
+    def _notify_remaining(self, minutes: int, voice_only: bool = False) -> None:
+        voice_key = "warn5_voice" if minutes >= 5 else "warn1_voice"
+        body_key = "warn5_body" if minutes >= 5 else "warn1_body"
+        if not voice_only:
+            msg = self._phrase(body_key)
+            title = self._phrase("title")
+            script = f'display notification "{msg}" with title "{title}"'
+            try:
+                subprocess.run(
+                    ["/usr/bin/osascript", "-e", script],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                self.logger.warning("Failed to show remaining-time notification.", exc_info=True)
+        self._speak(self._phrase(voice_key))
 
     def _notify_grace_start(self) -> None:
         msg = self._phrase("grace_body")
