@@ -58,6 +58,7 @@ Home Assistant owns the unified allow logic: `effective_allowed = override OR (b
 | `state_path` | ➖ | Local JSON cache of today’s minutes. Defaults to child’s `~/Library/Application Support/ha-screen-agent/state.json`. |
 | `log_file`, `err_log_file` | ➖ | Defaults `/tmp/ha_screen_agent.{out,err}.log`. |
 | `debug_mqtt` | ➖ | Set true to enable verbose MQTT client debug logging. |
+| `track_active_app` | ➖ | Set true to publish the frontmost app name to MQTT (discovery sensor enabled). |
 
 Edit this file as an admin. Keep it root-owned and readable by the child account (e.g., root:<child_group>, mode 0640) so the LaunchAgent can load it.
 
@@ -100,7 +101,7 @@ Edit this file as an admin. Keep it root-owned and readable by the child account
 
 Logs live in `/tmp/ha_screen_agent.{out,err}.log`. Usage state persists under the child’s Library folder so counters survive restarts but reset automatically at local midnight.
 
-MQTT discovery: with HA MQTT discovery enabled, the agent creates a device (`<child> mac`) with entities: sensor minutes, binary sensor active, switch allowed, number daily budget (HA-managed), and switch parent override (HA-managed).
+MQTT discovery: with HA MQTT discovery enabled, the agent creates a device (`<child> mac`) with entities: sensor minutes, binary sensor active, switch allowed, number daily budget (HA-managed), switch parent override (HA-managed), and (optional) frontmost app sensor when `track_active_app=true`.
 
 ---
 

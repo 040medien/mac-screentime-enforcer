@@ -16,5 +16,6 @@
   "state_path": "~/Library/Application Support/ha-screen-agent/state.json",
   "log_file": "/tmp/ha_screen_agent.out.log",
   "err_log_file": "/tmp/ha_screen_agent.err.log",
-  "debug_mqtt": false
+  "debug_mqtt": false,
+  "track_active_app": false
 }

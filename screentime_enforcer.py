@@ -192,6 +192,7 @@ class AgentConfig:
     log_file: str = DEFAULT_LOG_PATH
     err_log_file: str = DEFAULT_ERR_LOG_PATH
     debug_mqtt: bool = False
+    track_active_app: bool = False
 
     @classmethod
     def load(cls, path: Path) -> "AgentConfig":
@@ -253,6 +254,7 @@ class AgentConfig:
         log_file = data.get("log_file", DEFAULT_LOG_PATH)
         err_file = data.get("err_log_file", DEFAULT_ERR_LOG_PATH)
         debug_mqtt = bool(data.get("debug_mqtt", False))
+        track_active_app = bool(data.get("track_active_app", False))
 
         allowed_users_raw = data.get("allowed_users")
         if allowed_users_raw is not None:
@@ -285,6 +287,7 @@ class AgentConfig:
             err_log_file=err_file,
             allowed_users=allowed_users,
             debug_mqtt=debug_mqtt,
+            track_active_app=track_active_app,
         )
 
     @property
@@ -310,6 +313,10 @@ class AgentConfig:
     @property
     def budget_state_topic(self) -> str:
         return f"homeassistant/{self.discovery_base_id}/daily_budget/state"
+
+    @property
+    def active_app_topic(self) -> str:
+        return f"{self.topic_prefix}/mac/{self.device_id}/active_app"
 
 
 class UsageState:
@@ -376,6 +383,10 @@ class ScreenTimeAgent:
         self._running = True
         self._ignored_retained_block = False
         self._language = _detect_language()
+        self._budget_minutes: Optional[float] = None
+        self._warned_5 = False
+        self._warned_1 = False
+        self._last_active_app: Optional[str] = None
         self._discovery_published = False
         self._budget_minutes: Optional[float] = None
         self._warned_5 = False
@@ -468,6 +479,22 @@ class ScreenTimeAgent:
                         "device": device,
                     },
                 ),
+            ]
+            if self.config.track_active_app:
+                disc.append(
+                    (
+                        "sensor",
+                        f"{base_id}_active_app",
+                        {
+                            "name": f"{self.config.child_id} Mac Active App",
+                            "unique_id": f"{base_id}_active_app",
+                            "state_topic": self.config.active_app_topic,
+                            "icon": "mdi:laptop",
+                            "device": device,
+                        },
+                    )
+                )
+            extra = [
                 (
                     "switch",
                     f"{base_id}_allowed",
@@ -514,6 +541,7 @@ class ScreenTimeAgent:
                     },
                 ),
             ]
+            disc.extend(extra)
             for domain, obj_id, payload in disc:
                 topic = f"homeassistant/{domain}/{obj_id}/config"
                 self._mqtt_client.publish(topic, json.dumps(payload), retain=True, qos=1)
@@ -568,6 +596,8 @@ class ScreenTimeAgent:
             self._language = _detect_language()
             client.subscribe(self.config.allow_topic)
             client.subscribe(self.config.budget_state_topic)
+            if self.config.track_active_app:
+                self._last_active_app = None
             # Request retained allowed value ASAP
             client.publish(
                 self.config.status_topic,
@@ -656,10 +686,11 @@ class ScreenTimeAgent:
 
                 minutes_now = self.state.minutes_today()
                 self._check_budget_warnings(minutes_today=minutes_now)
+                active_app = self._frontmost_app_name() if self.config.track_active_app else None
 
                 self._maybe_save_state()
                 self._publish_metrics_if_needed(
-                    active_now=active, force=not self._mqtt_connected
+                    active_now=active, active_app=active_app, force=not self._mqtt_connected
                 )
                 self._enforce_if_required(active_now=active)
 
@@ -694,7 +725,9 @@ class ScreenTimeAgent:
         if remaining > 1:
             self._warned_1 = False
 
-    def _publish_metrics_if_needed(self, active_now: bool, force: bool = False) -> None:
+    def _publish_metrics_if_needed(
+        self, active_now: bool, active_app: Optional[str] = None, force: bool = False
+    ) -> None:
         minutes = self.state.minutes_today()
         now = time.monotonic()
         heartbeat_due = now - self._last_status_publish >= 55
@@ -712,6 +745,15 @@ class ScreenTimeAgent:
         publish_client.publish(
             self.config.active_topic, payload=active_flag, retain=False, qos=0
         )
+        if self.config.track_active_app and active_app is not None:
+            if force or active_app != self._last_active_app:
+                publish_client.publish(
+                    self.config.active_app_topic,
+                    payload=active_app,
+                    retain=True,
+                    qos=1,
+                )
+                self._last_active_app = active_app
         if heartbeat_due or force:
             status_payload = {
                 "status": "online" if self._mqtt_connected else "degraded",
@@ -721,6 +763,7 @@ class ScreenTimeAgent:
                 "allowed": self._current_allowed_state(),
                 "minutes_today": minutes,
                 "last_allowed_payload": self._last_allowed_payload,
+                "active_app": self._last_active_app if self.config.track_active_app else None,
                 "timestamp": _now_local().isoformat(),
             }
             publish_client.publish(
@@ -778,6 +821,21 @@ class ScreenTimeAgent:
         if self._is_session_locked():
             return False
         return True
+
+    def _frontmost_app_name(self) -> Optional[str]:
+        script = 'tell application "System Events" to get name of first application process whose frontmost is true'
+        try:
+            result = subprocess.run(
+                ["/usr/bin/osascript", "-e", script],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            name = (result.stdout or "").strip()
+            return name or None
+        except Exception:
+            self.logger.debug("Unable to read frontmost app.", exc_info=True)
+            return None
 
     def _notify_remaining(self, minutes: int, voice_only: bool = False) -> None:
         voice_key = "warn5_voice" if minutes >= 5 else "warn1_voice"
