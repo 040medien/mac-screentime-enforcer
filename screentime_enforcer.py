@@ -24,6 +24,7 @@ import signal
 import subprocess
 import sys
 import time
+import plistlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -141,6 +142,15 @@ def _detect_language() -> str:
         val = os.environ.get(key)
         if val:
             candidates.append(val)
+    try:
+        plist_path = Path.home() / "Library" / "Preferences" / ".GlobalPreferences.plist"
+        if plist_path.exists():
+            with plist_path.open("rb") as handle:
+                prefs = plistlib.load(handle)
+            apple_langs = prefs.get("AppleLanguages") or []
+            candidates.extend(apple_langs)
+    except Exception:
+        pass
     try:
         loc = locale.getdefaultlocale()[0]
         if loc:
