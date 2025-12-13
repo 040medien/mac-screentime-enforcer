@@ -757,15 +757,16 @@ class ScreenTimeAgent:
         publish_client.publish(
             self.config.active_topic, payload=active_flag, retain=True, qos=1
         )
-        if self.config.track_active_app and active_app is not None:
-            if force or active_app != self._last_active_app:
+        if self.config.track_active_app:
+            app_payload = active_app if (active_now and active_app) else ""
+            if force or app_payload != (self._last_active_app or ""):
                 publish_client.publish(
                     self.config.active_app_topic,
-                    payload=active_app,
+                    payload=app_payload,
                     retain=True,
                     qos=1,
                 )
-                self._last_active_app = active_app
+            self._last_active_app = active_app if (active_now and active_app) else None
         if heartbeat_due or force:
             status_payload = {
                 "status": "online" if self._mqtt_connected else "degraded",
@@ -933,6 +934,8 @@ class ScreenTimeAgent:
             }
             client = self._mqtt_client
             client.publish(self.config.active_topic, payload="0", retain=True, qos=1)
+            if self.config.track_active_app:
+                client.publish(self.config.active_app_topic, payload="", retain=True, qos=1)
             client.publish(
                 self.config.status_topic,
                 payload=json.dumps(payload),
