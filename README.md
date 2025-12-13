@@ -100,15 +100,14 @@ Edit this file as an admin. Keep it root-owned and readable by the child account
 
 Logs live in `/tmp/ha_screen_agent.{out,err}.log`. Usage state persists under the child’s Library folder so counters survive restarts but reset automatically at local midnight.
 
+MQTT discovery: with HA MQTT discovery enabled, the agent creates a device (`<child> mac`) with entities: sensor minutes, binary sensor active, switch allowed, number daily budget (HA-managed), and switch parent override (HA-managed).
+
 ---
 
 ## Home Assistant integration checklist
 
-1. **MQTT broker** – reachable from the Mac with retained messages enabled and ACLs that restrict each child to their namespace.
-2. **Sensors/helpers** (already assumed in the product requirements):
-   - `sensor.<child>_mac_minutes` → MQTT sensor reading `screen/<child>/mac/<device_id>/minutes_today`.
-   - `binary_sensor.<child>_mac_active` → MQTT binary sensor for the `active` topic.
-   - `binary_sensor.<child>_allowed_effective` → template or helper that combines budget, override, bedtime, school schedules.
+1. **MQTT broker** – reachable from the Mac with retained messages enabled, discovery enabled, and ACLs that restrict each child to their namespace.
+2. **Entities** – discovery creates minutes/active/allowed plus HA-managed budget and parent override entities automatically.
 3. **Automations**:
    - Midnight reset (set `allowed=1`, zero counters in HA if desired).
    - Budget enforcement (when total minutes exceeds helper, publish retained `allowed=0`).
@@ -117,39 +116,6 @@ Logs live in `/tmp/ha_screen_agent.{out,err}.log`. Usage state persists under th
    - Gauge or statistic card for “Total minutes today”.
    - Device breakdown (Switch / Android / Mac).
    - Parent override toggle and schedule indicators for auditability.
-
-Example MQTT sensor snippet (YAML):
-
-```yaml
-sensor:
-  - platform: mqtt
-    name: "Kiddo Mac Minutes Today"
-    state_topic: "screen/kiddo/mac/mac-mini/minutes_today"
-    unit_of_measurement: "min"
-    qos: 1
-```
-
-Example control automation (pseudo):
-
-```yaml
-automation:
-  - alias: "Kiddo budget enforcement"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.kiddo_total_minutes_today
-        above: input_number.kiddo_daily_budget
-    condition:
-      - condition: state
-        entity_id: input_boolean.kiddo_parent_override
-        state: "off"
-    action:
-      - service: mqtt.publish
-        data:
-          topic: "screen/kiddo/allowed"
-          qos: 1
-          retain: true
-          payload: "0"
-```
 
 ---
 
