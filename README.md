@@ -82,21 +82,19 @@ Edit this file as an admin. The installer will now prompt for basic settings (ch
    git clone https://github.com/your-org/mac-screentime-enforcer.git
    cd mac-screentime-enforcer
    ```
-3. **Install as root** (first run creates config, later runs upgrade):
+3. **Install as root** (interactive by default):
    ```bash
    sudo ./scripts/install_service.sh
    ```
-4. **Edit config as root** at `/Library/Application Support/ha-screen-agent/config.json`:
-   - Set `child_id`, `device_id`, MQTT host/credentials, `allowed_users` (child short name), and optional `track_active_app`.
-5. **Re-run installer as root** to apply config/upgrade:
-   ```bash
-   sudo ./scripts/install_service.sh
-   ```
-6. **Log in as the child** (standard user) and verify the agent is running:
+   - If no config exists at the target, the installer will prompt for child/device IDs, MQTT host/creds, topic prefix, allowed_users, and optional active-app sensor, then write `/Library/Application Support/ha-screen-agent/config.json` with safe permissions.
+   - If a config already exists or you pass `--config /path/to/config.json`, the installer will reuse it without prompting.
+4. **Update config later (optional)**:
+   - Edit `/Library/Application Support/ha-screen-agent/config.json` as root and rerun `sudo ./scripts/install_service.sh` to apply changes or upgrade the agent.
+5. **Log in as the child** (standard user) and verify the agent is running:
    ```bash
    log show --predicate 'process == "python3"' --last 5m | grep ha-screen-agent
    ```
-7. **Home Assistant**: discovery will create the Mac device and entities. Add/confirm your HA automations (budget, schedule, reset) to drive the `allowed` topic.
+6. **Home Assistant**: ensure MQTT discovery is enabled, let the device/entities appear, then add the automations from the examples below to drive the `allowed` state.
 
 Optional: **MQTT ACLs per child** (recommended)
 - Restricts the agent to its own topics/discovery payloads so the child cannot alter other data.
@@ -140,6 +138,64 @@ pattern read  $
    - Parent override toggle and schedule indicators for auditability.
 
 ---
+
+
+### Example Home Assistant automations (using MQTT discovery)
+
+The agent publishes MQTT discovery for a device named `<child> mac` with entities like:
+- `sensor.<child>_<device>_mac_minutes`
+- `switch.<child>_<device>_mac_allowed` (writes retained `screen/<child>/allowed`)
+- `number.<child>_<device>_mac_daily_budget_minutes` (HA-managed budget)
+- `switch.<child>_<device>_mac_parent_override`
+- `binary_sensor.<child>_<device>_mac_active` and optional `sensor.<child>_<device>_mac_active_app`
+
+Update the entity IDs below to match your discovered `child_id` and `device_id` (base_id = `child_id` + `_` + `device_id` + `_mac`).
+
+```yaml
+automation:
+  - alias: "Kiddo Mac - Block when budget exceeded"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.kiddo_macbookpro_mac_minutes
+        above: number.kiddo_macbookpro_mac_daily_budget_minutes
+    condition:
+      - condition: state
+        entity_id: switch.kiddo_macbookpro_mac_parent_override
+        state: "off"
+    action:
+      - service: switch.turn_off
+        target:
+          entity_id: switch.kiddo_macbookpro_mac_allowed
+
+  - alias: "Kiddo Mac - Allow when back under budget"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.kiddo_macbookpro_mac_minutes
+        below: number.kiddo_macbookpro_mac_daily_budget_minutes
+    condition:
+      - condition: state
+        entity_id: switch.kiddo_macbookpro_mac_parent_override
+        state: "off"
+    action:
+      - service: switch.turn_on
+        target:
+          entity_id: switch.kiddo_macbookpro_mac_allowed
+
+  - alias: "Kiddo Mac - Reset each morning"
+    trigger:
+      - platform: time
+        at: "03:00:00"
+    action:
+      - service: switch.turn_on
+        target:
+          entity_id: switch.kiddo_macbookpro_mac_allowed
+      - service: switch.turn_off
+        target:
+          entity_id: switch.kiddo_macbookpro_mac_parent_override
+      # Minutes reset locally at midnight; add more reset tasks here if needed
+```
+
+
 
 ## Security & hardening notes
 

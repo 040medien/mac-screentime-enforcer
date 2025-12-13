@@ -26,7 +26,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_CONFIG_SRC="$PROJECT_DIR/config/agent.config.sample.json"
-CONFIG_SRC="$DEFAULT_CONFIG_SRC"
+CONFIG_SRC=""
 INTERACTIVE=true
 
 
@@ -118,24 +118,27 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-CONFIG_SRC_INPUT=$CONFIG_SRC
+CONFIG_SRC_INPUT=${CONFIG_SRC:-}
 
-if [[ ! -f "$CONFIG_SRC" ]]; then
-    CONFIG_SRC=
-fi
+CONFIG_SRC="$CONFIG_SRC_INPUT"
 
-CONFIG_SRC="${CONFIG_SRC_INPUT:-$DEFAULT_CONFIG_SRC}"
-
-AGENT_DIR="/Library/Application Support/ha-screen-agent"
+AGENT_DIR="/Library Application Support/ha-screen-agent"
 AGENT_PATH="$AGENT_DIR/agent.py"
 CONFIG_PATH="$AGENT_DIR/config.json"
 
-if [[ -f "$CONFIG_PATH" || -n "$CONFIG_SRC_INPUT" ]]; then
+CONFIG_EXISTS=false
+[[ -f "$CONFIG_PATH" ]] && CONFIG_EXISTS=true
+
+if [[ -n "$CONFIG_SRC_INPUT" || "$CONFIG_EXISTS" == true ]]; then
     INTERACTIVE=false
 fi
 
 if [[ "$INTERACTIVE" == true ]]; then
     build_config_interactive
+fi
+
+if [[ -z "$CONFIG_SRC" ]]; then
+    CONFIG_SRC="$DEFAULT_CONFIG_SRC"
 fi
 
 if [[ ! -f "$CONFIG_SRC" ]]; then
@@ -267,10 +270,10 @@ Config location    : $CONFIG_PATH
 LaunchAgent        : $PLIST_PATH
 
 Next steps:
-  1. Edit ${CONFIG_PATH} (as admin) to set child_id, device_id, MQTT credentials, etc.
-  2. Ensure the MQTT broker topics and Home Assistant automations follow the README.
+  1. Confirm config values (child_id, device_id, MQTT credentials) are correct in $CONFIG_PATH.
+  2. In Home Assistant, add the automations from the README (allow under budget, block when out, reset daily) and confirm MQTT topics match.
   3. Log into the child account and verify the agent is running:
        log show --predicate 'process == "python3"' --last 5m | grep ha-screen-agent
-  4. Publish to screen/<child>/allowed to confirm enforcement.
+  4. Toggle the 'allowed' switch in Home Assistant (or publish screen/<child>/allowed) to confirm enforcement.
 ------------------------------------------------------------
 EOF
