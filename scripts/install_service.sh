@@ -6,10 +6,10 @@ usage() {
 Install the Home Assistant macOS Screen Time agent.
 
 Usage:
-  sudo ./scripts/install_service.sh [--config /path/to/config.json]
+  sudo ./scripts/install_service.sh [--config /path/to/config.json] [--interactive]
 
-If --config is omitted, config/agent.config.sample.json is copied to the
-root-controlled config location the first time you run this script.
+If --config is omitted and no config exists at the target, you'll be prompted
+for child ID, device ID, MQTT settings, and allowed users to create one.
 EOF
 }
 
@@ -27,6 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_CONFIG_SRC="$PROJECT_DIR/config/agent.config.sample.json"
 CONFIG_SRC="$DEFAULT_CONFIG_SRC"
+INTERACTIVE=true
 
 
 prompt_boolean() {
@@ -68,7 +69,7 @@ build_config_interactive() {
     for part in "${PARTS[@]}"; do
         part=$(echo "$part" | xargs)
         [[ -z "$part" ]] && continue
-        ALLOWED_JSON+="${ALLOWED_JSON:+, }"$part""
+        ALLOWED_JSON+="${ALLOWED_JSON:+, }\"$part\""
     done
     ALLOWED_JSON="[$ALLOWED_JSON]"
 
@@ -105,6 +106,10 @@ while [[ $# -gt 0 ]]; do
             CONFIG_SRC="$2"
             shift 2
             ;;
+        --interactive)
+            INTERACTIVE=true
+            shift 1
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             usage
@@ -121,7 +126,15 @@ fi
 
 CONFIG_SRC="${CONFIG_SRC_INPUT:-$DEFAULT_CONFIG_SRC}"
 
-if [[ ! -f "$CONFIG_SRC" ]]; then
+AGENT_DIR="/Library/Application Support/ha-screen-agent"
+AGENT_PATH="$AGENT_DIR/agent.py"
+CONFIG_PATH="$AGENT_DIR/config.json"
+
+if [[ -f "$CONFIG_PATH" || -n "$CONFIG_SRC_INPUT" ]]; then
+    INTERACTIVE=false
+fi
+
+if [[ "$INTERACTIVE" == true ]]; then
     build_config_interactive
 fi
 
@@ -132,9 +145,6 @@ fi
 
 CONFIG_SRC="$(cd "$(dirname "$CONFIG_SRC")" && pwd)/$(basename "$CONFIG_SRC")"
 
-AGENT_DIR="/Library/Application Support/ha-screen-agent"
-AGENT_PATH="$AGENT_DIR/agent.py"
-CONFIG_PATH="$AGENT_DIR/config.json"
 VENV_PATH="$AGENT_DIR/venv"
 PLIST_LABEL="com.ha.screen-agent"
 PLIST_PATH="/Library/LaunchAgents/${PLIST_LABEL}.plist"
