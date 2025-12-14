@@ -98,8 +98,10 @@ Configuration lives in `/Library/Application Support/ha-screen-agent/config.json
 | `device_id` | ➖ | Defaults to sanitized hostname if not set in the entry. |
 | `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password`, `mqtt_tls` | ✅ | MQTT connectivity (TLS optional). |
 | `sample_interval_seconds` | ➖ | 5–60, default 15. |
+| `blocked_check_seconds` | ➖ | Polling interval (seconds) while blocked; 0.5–10, default 1.0 to re-lock quickly if the child reauthenticates. |
 | `idle_timeout_seconds` | ➖ | Idle threshold in seconds, default 120. |
 | `enforcement_mode` | ➖ | `lock` (default) or `logout`. |
+| `logout_method` | ➖ | How to force logout when `enforcement_mode=logout`: `osascript` (default, shows a prompt) or `kill_loginwindow` (kills the loginwindow process to bypass prompts). |
 | `fail_mode` | ➖ | `safe` (fail closed) or `open`. |
 | `offline_grace_period_seconds` | ➖ | Default 0. |
 | `state_path` | ➖ | Defaults to `~/Library/Application Support/ha-screen-agent/state.json`. |
@@ -165,6 +167,18 @@ pattern read  $
 | Minutes not updating in HA | Confirm MQTT topics via `mosquitto_sub` and broker ACLs allow publishing. |
 | Mac never unlocks after MQTT outage | Verify `offline_grace_period_seconds`, network reachability, and retained `allowed=1`. |
 | Child can still use Mac when blocked | Ensure HA publishes retained `allowed=0`, LaunchAgent is running, and enforcement mode is set correctly. |
+
+### Harder lockouts (when logout prompts appear)
+
+macOS shows a cancelable confirmation dialog when users are logged out, so a determined child can dodge `enforcement_mode=logout`. To make the block harder to bypass:
+
+- Prefer `enforcement_mode=lock` (default). The agent immediately locks the session instead of attempting logout.
+- Require a password to unlock after sleep/screensaver: **System Settings → Privacy & Security → Require password after sleep or screen saver begins** → set to *Immediately*.
+- Give the child account its own password (even a simple PIN) so the lock screen cannot be dismissed without supervision.
+- Disable automatic login and fast user switching so the lock screen is always shown.
+- Shorten `idle_timeout_seconds` and keep `sample_interval_seconds` small (e.g., 5–10 seconds) to reduce any window where they can act before the lock triggers.
+
+These steps keep the session locked instead of relying on logout, eliminating the cancelable prompt.
 
 ## License
 

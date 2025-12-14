@@ -240,8 +240,10 @@ class AgentConfig:
     mqtt_password: Optional[str] = None
     mqtt_tls: bool = False
     sample_interval_seconds: int = 15
+    blocked_check_seconds: float = 1.0
     idle_timeout_seconds: int = 120
     enforcement_mode: str = "lock"  # lock | logout
+    logout_method: str = "osascript"  # osascript | kill_loginwindow
     fail_mode: str = "safe"  # safe | open
     offline_grace_period_seconds: int = 0
     state_path: Path = DEFAULT_STATE_PATH
@@ -322,9 +324,17 @@ class AgentConfig:
         if idle_timeout < sample_interval:
             raise ValueError("`idle_timeout_seconds` must be >= sample interval.")
 
+        blocked_check_seconds = float(data.get("blocked_check_seconds", 1.0))
+        if blocked_check_seconds < 0.5 or blocked_check_seconds > 10:
+            raise ValueError("`blocked_check_seconds` must be between 0.5 and 10 seconds.")
+
         enforcement_mode = data.get("enforcement_mode", "lock").lower()
         if enforcement_mode not in {"lock", "logout"}:
             raise ValueError("`enforcement_mode` must be lock or logout.")
+
+        logout_method = data.get("logout_method", "osascript").lower()
+        if logout_method not in {"osascript", "kill_loginwindow"}:
+            raise ValueError("`logout_method` must be osascript or kill_loginwindow.")
 
         fail_mode = data.get("fail_mode", "safe").lower()
         if fail_mode not in {"safe", "open"}:
@@ -354,7 +364,9 @@ class AgentConfig:
             mqtt_tls=bool(data.get("mqtt_tls", False)),
             sample_interval_seconds=sample_interval,
             idle_timeout_seconds=idle_timeout,
+            blocked_check_seconds=blocked_check_seconds,
             enforcement_mode=enforcement_mode,
+            logout_method=logout_method,
             fail_mode=fail_mode,
             offline_grace_period_seconds=grace,
             state_path=state_path,
@@ -781,7 +793,11 @@ class ScreenTimeAgent:
                 else:
                     self._enforce_if_required(active_now=active)
 
-                sleep_time = max(1.0, float(self.config.sample_interval_seconds))
+                sleep_time = (
+                    float(self.config.blocked_check_seconds)
+                    if blocked
+                    else max(1.0, float(self.config.sample_interval_seconds))
+                )
                 time.sleep(sleep_time)
         except KeyboardInterrupt:
             self.logger.info("Stopping agent (SIGINT).")
@@ -1007,7 +1023,24 @@ class ScreenTimeAgent:
             self.logger.error("Failed to lock screen via CGSession: %s", exc)
 
     def _logout_session(self) -> None:
-        self.logger.warning("Logging out session (allowed=0).")
+        self.logger.warning(
+            "Logging out session (allowed=0) via %s", self.config.logout_method
+        )
+        if self.config.logout_method == "kill_loginwindow":
+            user = self.config.managed_user or os.environ.get("USER") or ""
+            try:
+                subprocess.run(
+                    ["/usr/bin/killall", "-u", user, "loginwindow"],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return
+            except subprocess.CalledProcessError as exc:
+                self.logger.error(
+                    "Force logout via killall loginwindow failed: %s", exc
+                )
+
         script = 'tell application "System Events" to log out'
         try:
             subprocess.run(
