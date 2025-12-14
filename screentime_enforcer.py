@@ -460,8 +460,8 @@ class ScreenTimeAgent:
             protocol=mqtt.MQTTv311,
             clean_session=True,
         )
-        # Ensure HA receives an inactive state if the agent dies unexpectedly.
-        client.will_set(self.config.active_topic, payload="0", qos=1, retain=True)
+        # Ensure HA receives an inactive state if the agent dies unexpectedly (non-retained).
+        client.will_set(self.config.active_topic, payload="0", qos=1, retain=False)
         if self.config.mqtt_username:
             client.username_pw_set(
                 self.config.mqtt_username, password=self.config.mqtt_password or None
@@ -785,9 +785,7 @@ class ScreenTimeAgent:
             )
             self._last_minutes_published = minutes
         active_flag = "1" if active_now else "0"
-        publish_client.publish(
-            self.config.active_topic, payload=active_flag, retain=True, qos=1
-        )
+        publish_client.publish(self.config.active_topic, payload=active_flag, retain=False, qos=0)
         if self.config.track_active_app:
             app_payload = active_app if (active_now and active_app) else ""
             if force or app_payload != (self._last_active_app or ""):
@@ -964,7 +962,7 @@ class ScreenTimeAgent:
                 "timestamp": _now_local().isoformat(),
             }
             client = self._mqtt_client
-            client.publish(self.config.active_topic, payload="0", retain=True, qos=1)
+            client.publish(self.config.active_topic, payload="0", retain=False, qos=0)
             if self.config.track_active_app:
                 client.publish(self.config.active_app_topic, payload="", retain=True, qos=1)
             client.publish(
