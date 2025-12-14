@@ -472,6 +472,8 @@ class ScreenTimeAgent:
                         "name": f"{self.config.child_id} Mac Minutes",
                         "unique_id": f"{base_id}_minutes",
                         "state_topic": self.config.minutes_topic,
+                        "device_class": "duration",
+                        "state_class": "total_increasing",
                         "unit_of_measurement": "min",
                         "icon": "mdi:timer-outline",
                         "device": device,
