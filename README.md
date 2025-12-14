@@ -1,162 +1,49 @@
 # macOS Screen Time Agent for Home Assistant
 
-This project ships a hardened macOS LaunchAgent that tracks a child’s Mac usage, reports it to Home Assistant over MQTT, and enforces the unified “allowed / not allowed” state that Home Assistant publishes.  
-It does **not** rely on Apple Screen Time APIs or privileged entitlements and is designed to run inside the child’s standard user session.
+Hardened macOS LaunchAgent that tracks a child’s Mac usage, reports it to Home Assistant over MQTT, and enforces the retained “allowed” flag from HA. Runs entirely in the child’s user session—no Apple Screen Time APIs or special entitlements.
 
-## Key capabilities
+## What you get
 
-1. **Accurate local tracking** – counts “minutes today” only while the child session is unlocked and not idle.
-2. **MQTT telemetry** – publishes retained `minutes_today`, live `active` flag, and heartbeat status every ≤60 s.
-3. **Central enforcement** – subscribes to retained `screen/<child>/allowed` topic and locks or logs out the session within seconds when HA denies access (budget exceeded, bedtime, school schedule, etc.).
-4. **Fail-safe** – configurable grace period; defaults to “fail closed” when MQTT is offline or config is invalid.
-5. **Hardening** – code, config, and LaunchAgent live under root-controlled paths (`/Library/Application Support/ha-screen-agent`, `/Library/LaunchAgents`).
-
----
-
-## Repository layout
-
-```
-.
-├── screentime_enforcer.py            # Main agent (installed to /Library/Application Support/ha-screen-agent/agent.py)
-├── config/agent.config.sample.json   # Sample root-controlled config
-├── scripts/install_service.sh        # Parent-facing installer (run with sudo)
-├── requirements.txt                  # Python deps (PyObjC, MQTT, etc.)
-└── homeassistant/                    # Example HA snippets & docs (see below)
-```
-
----
-
-## MQTT topic contract
-
-Assuming `child_id = kiddo` and `device_id = mac-mini`:
-
-| Direction | Topic | Payload |
-|-----------|-------|---------|
-| Agent → HA (retained) | `screen/kiddo/mac/mac-mini/minutes_today` | Integer minutes counted today |
-| Agent → HA | `screen/kiddo/mac/mac-mini/active` | `0` or `1` (child actively using Mac) |
-| Agent → HA | `screen/kiddo/mac/mac-mini/status` | JSON heartbeat (`status`, `version`, `minutes_today`, `allowed`, timestamp, etc.) |
-| HA → Agent (retained) | `screen/kiddo/allowed` | `0/1`, `on/off`, or `true/false` |
-
-Home Assistant owns the unified allow logic: `effective_allowed = override OR (budget_ok AND !bedtime AND !school_time)`. The macOS agent never interprets budget/schedule directly—it simply honors the retained `screen/<child>/allowed` value.
-
----
-
-## Configuration reference (`/Library/Application Support/ha-screen-agent/config.json`)
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `child_id` | ✅ | Identifier used across HA topics. |
-| `device_id` | ➖ | Optional per-Mac identifier (defaults to sanitized hostname). |
-| `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password`, `mqtt_tls` | ✅ | MQTT connectivity. TLS optional. |
-| `topic_prefix` | ✅ | Must begin with `screen/<child_id>`. |
-| `sample_interval_seconds` | ➖ | 5–60 (default 15). |
-| `idle_timeout_seconds` | ➖ | Minutes stop counting if idle > timeout (default 120 s). |
-| `enforcement_mode` | ➖ | `lock` (default) or `logout`. |
-| `fail_mode` | ➖ | `safe` (fail closed) or `open`. |
-| `offline_grace_period_seconds` | ➖ | Grace before fail-safe kicks in (default 180 s). |
-| `allowed_users` | ➖ | Array of macOS short names allowed to run the agent. Prevents the service from starting in other sessions. |
-| `state_path` | ➖ | Local JSON cache of today’s minutes. Defaults to child’s `~/Library/Application Support/ha-screen-agent/state.json`. |
-| `log_file`, `err_log_file` | ➖ | Defaults `/tmp/ha_screen_agent.{out,err}.log`. |
-| `debug_mqtt` | ➖ | Set true to enable verbose MQTT client debug logging. |
-| `track_active_app` | ➖ | Set true to publish the frontmost app name to MQTT (discovery sensor enabled). |
-
-Edit this file as an admin. The installer will now prompt for basic settings (child/device IDs, MQTT host/creds, allowed_users, optional active app sensor) if no config exists. Keep it root-owned and readable by the child account (e.g., root:<child_group>, mode 0640) so the LaunchAgent can load it.
-
----
+- **Accurate local tracking**: counts minutes only when the child session is unlocked and not idle.
+- **Enforcement**: locks or logs out within seconds when HA publishes `allowed=0`.
+- **MQTT discovery & telemetry**: retained minutes, live active flag, heartbeat status, optional active app sensor.
+- **Fail-safe defaults**: configurable grace window; fails closed when MQTT is down or config is bad.
 
 ## Requirements
 
-- macOS device with a **parent admin** account and a **child non-admin** account.
-- Home Assistant with MQTT discovery enabled and a Mosquitto broker.
-- MQTT credentials for the child’s namespace (host/port/username/password, TLS if used).
-- Internet access to install Apple Command Line Tools (one-time).
+- macOS with a **parent admin** account and a **child non-admin** account.
+- Home Assistant with MQTT discovery enabled and an MQTT broker (e.g., Mosquitto).
+- MQTT credentials scoped to the child’s namespace; internet to install Apple Command Line Tools once.
 
-## Installation (parent admin account)
+## Install (parent admin account)
 
-1. **Install Apple Command Line Tools** (once):
-   ```bash
-   xcode-select --install
-   ```
-2. **Download the agent**:
-   ```bash
-   git clone https://github.com/your-org/mac-screentime-enforcer.git
-   cd mac-screentime-enforcer
-   ```
-3. **Install as root** (interactive by default):
-   ```bash
-   sudo ./scripts/install_service.sh
-   ```
-   - If no config exists at the target, the installer will prompt for child/device IDs, MQTT host/creds, topic prefix, allowed_users, and optional active-app sensor, then write `/Library/Application Support/ha-screen-agent/config.json` with safe permissions.
-   - If a config already exists or you pass `--config /path/to/config.json`, the installer will reuse it without prompting.
-4. **Update config later (optional)**:
-   - Edit `/Library/Application Support/ha-screen-agent/config.json` as root and rerun `sudo ./scripts/install_service.sh` to apply changes or upgrade the agent.
-5. **Log in as the child** (standard user) and verify the agent is running:
-   ```bash
-   log show --predicate 'process == "python3"' --last 5m | grep ha-screen-agent
-   ```
-6. **Home Assistant**: ensure MQTT discovery is enabled, let the device/entities appear, then add the automations from the examples below to drive the `allowed` state.
-   - With discovery on, Home Assistant will create a new device under **Settings → Devices & Services → Integrations → MQTT** named `<child> mac` containing all the entities (minutes, active, allowed switch, budget number, parent override switch, optional active app).
+1. Install Command Line Tools: `xcode-select --install`
+2. Clone: `git clone https://github.com/your-org/mac-screentime-enforcer.git && cd mac-screentime-enforcer`
+3. Install as root: `sudo ./scripts/install_service.sh`
+   - Prompts for child/device IDs, MQTT host/creds, topic prefix, allowed users, optional active-app sensor if no config exists.
+   - Reuse an existing config via `--config /path/to/config.json`.
+4. Update later: edit `/Library/Application Support/ha-screen-agent/config.json` as root, rerun the installer.
+5. Log in as the child and verify: `log show --predicate 'process == "python3"' --last 5m | grep ha-screen-agent`
+6. Home Assistant: with MQTT discovery on, a device named `<child> mac` appears under **Settings → Devices & Services → Integrations → MQTT** with minutes, active, allowed switch, budget number, parent override switch, optional active-app sensor. Add the automations below to drive `allowed`.
 
-### macOS prompts and permissions
+### macOS prompts & permissions
 
-- **Login item notice (child’s first login):** macOS will show a banner that a background item was added. This is expected for the LaunchAgent; it can be dismissed.
-- **Accessibility approval (requires admin):** macOS may prompt to allow the agent (`python3` from `/Library/Application Support/ha-screen-agent/agent.py`) to control the computer (used for logout/lock and optional active-app sensor). Approve in **Settings → Privacy & Security → Accessibility**; toggling requires an admin password. Log out/in afterward so the permission applies.
+- **Background item notice** on the child’s first login (expected for the LaunchAgent).
+- **Accessibility approval (admin required)** for `python3` at `/Library/Application Support/ha-screen-agent/agent.py` so it can lock/log out and, if enabled, read the frontmost app. Approve under **Settings → Privacy & Security → Accessibility**, then log out/in.
 
-Optional: **MQTT ACLs per child** (recommended)
-- Restricts the agent to its own topics/discovery payloads so the child cannot alter other data.
-- See the ACL example below; repeat per child with their username/topic prefix.
+## Home Assistant integration
 
-Logs live in `/tmp/ha_screen_agent.{out,err}.log`. Usage state persists under the child’s Library folder so counters survive restarts but reset automatically at local midnight.
-If the agent is not running at midnight, the on-disk counter will not reset until it restarts; to keep a strict daily view in Home Assistant regardless of agent uptime, wrap the minutes sensor in a HA `utility_meter` with a daily cycle.
+- **MQTT topics (child_id=kiddo, device_id=mac-mini)**  
+  - Agent → HA (retained): `screen/kiddo/mac/mac-mini/minutes_today` (integer minutes)  
+  - Agent → HA (retained): `screen/kiddo/mac/mac-mini/active` (`0/1`)  
+  - Agent → HA: `screen/kiddo/mac/mac-mini/status` (JSON heartbeat)  
+  - HA → Agent (retained): `screen/kiddo/allowed` (`0/1`, `on/off`, `true/false`)
+- **Discovery entities**: minutes sensor, active binary sensor, allowed switch, daily budget number (HA-managed), parent override switch (HA-managed), optional active app sensor.
+- **Daily reset**: the agent resets its local minutes at midnight while running. If it is offline at midnight, wrap the minutes sensor in a HA `utility_meter` with a daily cycle to keep a strict per-day view.
 
-MQTT discovery: with HA MQTT discovery enabled, the agent creates a device (`<child> mac`) with entities: sensor minutes, binary sensor active, switch allowed, number daily budget (HA-managed), switch parent override (HA-managed), and (optional) frontmost app sensor when `track_active_app=true`.
+### Example automations (MQTT discovery)
 
-Example Mosquitto ACL (replace `kiddo` + device namespace):
-
-```
-user kiddo
-# Allow publishing telemetry/status for this child/device (minutes, active, status)
-topic write screen/kiddo/mac/#
-# Allow reading the retained allowed flag only
-topic read  screen/kiddo/allowed
-# Allow MQTT discovery configs
-topic write homeassistant/+/+/config
-# Allow reading current budget (HA-managed number state)
-topic read  homeassistant/+/+/state
-
-# Deny everything else explicitly
-pattern write $
-pattern read  $
-```
-
----
-
-## Home Assistant integration checklist
-
-1. **MQTT broker** – reachable from the Mac with retained messages enabled, discovery enabled, and ACLs that restrict each child to their namespace.
-2. **Entities** – discovery creates minutes/active/allowed plus HA-managed budget and parent override entities automatically.
-3. **Automations**:
-   - Midnight reset (set `allowed=1`, zero counters in HA if desired).
-   - Budget enforcement (when total minutes exceeds helper, publish retained `allowed=0`).
-   - Schedule enforcement (when `schedule.<child>_bedtime` or `schedule.<child>_school_time` turns on, publish retained `allowed=0` within 5 s).
-4. **Dashboard**:
-   - Gauge or statistic card for “Total minutes today”.
-   - Device breakdown (Switch / Android / Mac).
-   - Parent override toggle and schedule indicators for auditability.
-
----
-
-
-### Example Home Assistant automations (using MQTT discovery)
-
-The agent publishes MQTT discovery for a device named `<child> mac` with entities like:
-- `sensor.<child>_<device>_mac_minutes`
-- `switch.<child>_<device>_mac_allowed` (writes retained `screen/<child>/allowed`)
-- `number.<child>_<device>_mac_daily_budget_minutes` (HA-managed budget)
-- `switch.<child>_<device>_mac_parent_override`
-- `binary_sensor.<child>_<device>_mac_active` and optional `sensor.<child>_<device>_mac_active_app`
-
-Update the entity IDs below to match your discovered `child_id` and `device_id` (base_id = `child_id` + `_` + `device_id` + `_mac`).
+Update IDs to match your discovered entities (`base_id = child_id + "_" + device_id + "_mac"`):
 
 ```yaml
 automation:
@@ -202,28 +89,71 @@ automation:
       # Minutes reset locally at midnight; add more reset tasks here if needed
 ```
 
+## Configuration (`/Library/Application Support/ha-screen-agent/config.json`)
 
+| Field | Required | Notes |
+|-------|----------|-------|
+| `child_id` | ✅ | Used in HA topics and discovery device name. |
+| `device_id` | ➖ | Defaults to sanitized hostname. |
+| `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password`, `mqtt_tls` | ✅ | MQTT connectivity (TLS optional). |
+| `topic_prefix` | ✅ | Must start with `screen/<child_id>`. |
+| `sample_interval_seconds` | ➖ | 5–60, default 15. |
+| `idle_timeout_seconds` | ➖ | Idle threshold in seconds, default 120. |
+| `enforcement_mode` | ➖ | `lock` (default) or `logout`. |
+| `fail_mode` | ➖ | `safe` (fail closed) or `open`. |
+| `offline_grace_period_seconds` | ➖ | Default 180. |
+| `allowed_users` | ➖ | macOS short names allowed to run the agent. |
+| `state_path` | ➖ | Defaults to `~/Library/Application Support/ha-screen-agent/state.json`. |
+| `log_file`, `err_log_file` | ➖ | Defaults `/tmp/ha_screen_agent.{out,err}.log`. |
+| `debug_mqtt` | ➖ | Set true for verbose client logging. |
+| `track_active_app` | ➖ | Publish frontmost app name to MQTT. |
 
-## Security & hardening notes
+Edit as admin; keep it root-owned and readable by the child account (e.g., root:<child_group> 0640). The installer prompts for basics when no config exists.
 
-- Install and own all files as `root:wheel`; child account must remain non-admin.
-- The LaunchAgent lives in `/Library/LaunchAgents` (not user-writable) and is loaded into the child’s GUI session via `launchctl bootstrap gui/<uid> …`.
-- Default behavior is **fail-safe**: if MQTT disconnects longer than the configured grace period, the Mac is locked until connectivity returns.
-- Optional `allowed_users` list ensures the agent simply exits when run in unexpected sessions (e.g., parent admin login).
-- Config should be root-owned and readable by the child account (e.g., root:<child_group> 0640) so the LaunchAgent can start; still enforce broker ACLs per child/topic.
+## MQTT ACL example (per child)
 
----
+```
+user kiddo
+# Allow publishing telemetry/status for this child/device (minutes, active, status)
+topic write screen/kiddo/mac/#
+# Allow reading the retained allowed flag only
+topic read  screen/kiddo/allowed
+# Allow MQTT discovery configs
+topic write homeassistant/+/+/config
+# Allow reading current budget (HA-managed number state)
+topic read  homeassistant/+/+/state
+
+# Deny everything else explicitly
+pattern write $
+pattern read  $
+```
+
+## Repository layout
+
+```
+.
+├── screentime_enforcer.py            # Main agent (installed to /Library/Application Support/ha-screen-agent/agent.py)
+├── config/agent.config.sample.json   # Sample root-controlled config
+├── scripts/install_service.sh        # Parent-facing installer (run with sudo)
+├── requirements.txt                  # Python deps (PyObjC, MQTT, etc.)
+└── homeassistant/                    # Example HA snippets & docs
+```
+
+## Security & hardening
+
+- Install and own all files as `root:wheel`; child account stays non-admin.
+- LaunchAgent lives in `/Library/LaunchAgents` and is bootstrapped into the child’s GUI session.
+- Default behavior is **fail-safe**: when MQTT is down beyond the grace window, the Mac locks until connectivity returns.
+- `allowed_users` limits where the agent runs; broker ACLs should still enforce per-child topics.
 
 ## Troubleshooting
 
 | Symptom | Checks |
 |---------|--------|
 | Agent does not start | `launchctl print gui/<uid> com.ha.screen-agent`; inspect `/tmp/ha_screen_agent.err.log`. |
-| Minutes not updating in HA | Confirm MQTT topics via `mosquitto_sub` and ensure broker ACL allows publishing. |
-| Mac never unlocks after MQTT outage | Verify grace period (`offline_grace_period_seconds`), network reachability, and that retained `allowed=1` exists. |
-| Child can still use Mac when blocked | Ensure HA publishes retained `allowed=0`, LaunchAgent is running, and enforcement mode is set to `lock` or `logout` as desired. |
-
----
+| Minutes not updating in HA | Confirm MQTT topics via `mosquitto_sub` and broker ACLs allow publishing. |
+| Mac never unlocks after MQTT outage | Verify `offline_grace_period_seconds`, network reachability, and retained `allowed=1`. |
+| Child can still use Mac when blocked | Ensure HA publishes retained `allowed=0`, LaunchAgent is running, and enforcement mode is set correctly. |
 
 ## License
 
