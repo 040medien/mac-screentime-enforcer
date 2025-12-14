@@ -472,6 +472,8 @@ class ScreenTimeAgent:
                         "name": f"{self.config.child_id} Mac Minutes",
                         "unique_id": f"{base_id}_minutes",
                         "state_topic": self.config.minutes_topic,
+                        "device_class": "duration",
+                        "state_class": "measurement",
                         "unit_of_measurement": "min",
                         "icon": "mdi:timer-outline",
                         "device": device,
@@ -507,6 +509,18 @@ class ScreenTimeAgent:
                     )
                 )
             extra = [
+                (
+                    "utility_meter",
+                    f"{base_id}_minutes_daily_meter",
+                    {
+                        "name": f"{self.config.child_id} Mac Minutes (Daily)",
+                        "unique_id": f"{base_id}_minutes_daily_meter",
+                        "source": f"sensor.{base_id}_minutes",
+                        "cycle": "daily",
+                        "icon": "mdi:timer-reset",
+                        "device": device,
+                    },
+                ),
                 (
                     "switch",
                     f"{base_id}_allowed",

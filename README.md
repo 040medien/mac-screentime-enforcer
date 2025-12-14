@@ -109,7 +109,7 @@ Optional: **MQTT ACLs per child** (recommended)
 Logs live in `/tmp/ha_screen_agent.{out,err}.log`. Usage state persists under the child’s Library folder so counters survive restarts but reset automatically at local midnight.
 If the agent is not running at midnight, the on-disk counter will not reset until it restarts; to keep a strict daily view in Home Assistant regardless of agent uptime, wrap the minutes sensor in a HA `utility_meter` with a daily cycle.
 
-MQTT discovery: with HA MQTT discovery enabled, the agent creates a device (`<child> mac`) with entities: sensor minutes, binary sensor active, switch allowed, number daily budget (HA-managed), switch parent override (HA-managed), and (optional) frontmost app sensor when `track_active_app=true`.
+MQTT discovery: with HA MQTT discovery enabled, the agent creates a device (`<child> mac`) with entities: sensor minutes, binary sensor active, switch allowed, number daily budget (HA-managed), switch parent override (HA-managed), a daily `utility_meter` that resets minutes at midnight, and (optional) frontmost app sensor when `track_active_app=true`.
 
 Example Mosquitto ACL (replace `kiddo` + device namespace):
 
