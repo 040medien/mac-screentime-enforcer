@@ -101,7 +101,7 @@ Configuration lives in `/Library/Application Support/ha-screen-agent/config.json
 | `idle_timeout_seconds` | ➖ | Idle threshold in seconds, default 120. |
 | `enforcement_mode` | ➖ | `lock` (default) or `logout`. |
 | `fail_mode` | ➖ | `safe` (fail closed) or `open`. |
-| `offline_grace_period_seconds` | ➖ | Default 180. |
+| `offline_grace_period_seconds` | ➖ | Default 0. |
 | `state_path` | ➖ | Defaults to `~/Library/Application Support/ha-screen-agent/state.json`. |
 | `log_file`, `err_log_file` | ➖ | Defaults `/tmp/ha_screen_agent.{out,err}.log`. |
 | `debug_mqtt` | ➖ | Set true for verbose client logging. |
