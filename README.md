@@ -97,6 +97,11 @@ Edit this file as an admin. The installer will now prompt for basic settings (ch
 6. **Home Assistant**: ensure MQTT discovery is enabled, let the device/entities appear, then add the automations from the examples below to drive the `allowed` state.
    - With discovery on, Home Assistant will create a new device under **Settings → Devices & Services → Integrations → MQTT** named `<child> mac` containing all the entities (minutes, active, allowed switch, budget number, parent override switch, optional active app).
 
+### macOS prompts and permissions
+
+- **Login item notice (child’s first login):** macOS will show a banner that a background item was added. This is expected for the LaunchAgent; it can be dismissed.
+- **Accessibility approval (requires admin):** macOS may prompt to allow the agent (`python3` from `/Library/Application Support/ha-screen-agent/agent.py`) to control the computer (used for logout/lock and optional active-app sensor). Approve in **Settings → Privacy & Security → Accessibility**; toggling requires an admin password. Log out/in afterward so the permission applies.
+
 Optional: **MQTT ACLs per child** (recommended)
 - Restricts the agent to its own topics/discovery payloads so the child cannot alter other data.
 - See the ACL example below; repeat per child with their username/topic prefix.
