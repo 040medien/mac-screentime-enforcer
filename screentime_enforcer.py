@@ -56,6 +56,10 @@ SUPPORTED_LANG_PHRASES = {
         "warn5_voice": "You have five minutes of screen time left.",
         "warn1_body": "1 minute of screen time remains.",
         "warn1_voice": "You have one minute of screen time left.",
+        "login_remaining_body": "You have {minutes} minutes of screen time left today.",
+        "login_remaining_voice": "You have {minutes} minutes of screen time left today.",
+        "login_out_body": "Screen time is out for today.",
+        "login_out_voice": "Your screen time is used up for today.",
     },
     "de": {
         "title": "Bildschirmzeit",
@@ -64,6 +68,10 @@ SUPPORTED_LANG_PHRASES = {
         "warn5_voice": "Du hast noch fünf Minuten Bildschirmzeit.",
         "warn1_body": "Noch 1 Minute Bildschirmzeit übrig.",
         "warn1_voice": "Du hast noch eine Minute Bildschirmzeit.",
+        "login_remaining_body": "Du hast noch {minutes} Minuten Bildschirmzeit heute.",
+        "login_remaining_voice": "Du hast noch {minutes} Minuten Bildschirmzeit heute.",
+        "login_out_body": "Für heute ist keine Bildschirmzeit mehr übrig.",
+        "login_out_voice": "Deine Bildschirmzeit für heute ist aufgebraucht.",
     },
     "fr": {
         "title": "Temps d'écran",
@@ -72,6 +80,10 @@ SUPPORTED_LANG_PHRASES = {
         "warn5_voice": "Il te reste cinq minutes de temps d'écran.",
         "warn1_body": "Il reste 1 minute de temps d'écran.",
         "warn1_voice": "Il te reste une minute de temps d'écran.",
+        "login_remaining_body": "Il te reste {minutes} minutes de temps d'écran aujourd'hui.",
+        "login_remaining_voice": "Il te reste {minutes} minutes de temps d'écran aujourd'hui.",
+        "login_out_body": "Plus de temps d'écran pour aujourd'hui.",
+        "login_out_voice": "Ton temps d'écran est terminé pour aujourd'hui.",
     },
     "es": {
         "title": "Tiempo de pantalla",
@@ -80,6 +92,10 @@ SUPPORTED_LANG_PHRASES = {
         "warn5_voice": "Te quedan cinco minutos de tiempo de pantalla.",
         "warn1_body": "Queda 1 minuto de tiempo de pantalla.",
         "warn1_voice": "Te queda un minuto de tiempo de pantalla.",
+        "login_remaining_body": "Te quedan {minutes} minutos de tiempo de pantalla hoy.",
+        "login_remaining_voice": "Te quedan {minutes} minutos de tiempo de pantalla hoy.",
+        "login_out_body": "No queda tiempo de pantalla para hoy.",
+        "login_out_voice": "Tu tiempo de pantalla para hoy se ha terminado.",
     },
     "it": {
         "title": "Tempo schermo",
@@ -88,6 +104,10 @@ SUPPORTED_LANG_PHRASES = {
         "warn5_voice": "Ti restano cinque minuti di tempo schermo.",
         "warn1_body": "Resta 1 minuto di tempo schermo.",
         "warn1_voice": "Ti resta un minuto di tempo schermo.",
+        "login_remaining_body": "Hai ancora {minutes} minuti di tempo schermo oggi.",
+        "login_remaining_voice": "Hai ancora {minutes} minuti di tempo schermo oggi.",
+        "login_out_body": "Nessun tempo schermo rimasto per oggi.",
+        "login_out_voice": "Hai terminato il tempo schermo per oggi.",
     },
     "nl": {
         "title": "Schermtijd",
@@ -96,6 +116,10 @@ SUPPORTED_LANG_PHRASES = {
         "warn5_voice": "Je hebt nog vijf minuten schermtijd.",
         "warn1_body": "Nog 1 minuut schermtijd over.",
         "warn1_voice": "Je hebt nog één minuut schermtijd.",
+        "login_remaining_body": "Je hebt nog {minutes} minuten schermtijd vandaag.",
+        "login_remaining_voice": "Je hebt nog {minutes} minuten schermtijd vandaag.",
+        "login_out_body": "Geen schermtijd meer over voor vandaag.",
+        "login_out_voice": "Je schermtijd voor vandaag is op.",
     },
     "pt": {
         "title": "Tempo de tela",
@@ -104,6 +128,10 @@ SUPPORTED_LANG_PHRASES = {
         "warn5_voice": "Você tem cinco minutos de tempo de tela restantes.",
         "warn1_body": "Resta 1 minuto de tempo de tela.",
         "warn1_voice": "Você tem um minuto de tempo de tela restante.",
+        "login_remaining_body": "Você tem {minutes} minutos de tempo de tela hoje.",
+        "login_remaining_voice": "Você tem {minutes} minutos de tempo de tela hoje.",
+        "login_out_body": "Sem tempo de tela restante para hoje.",
+        "login_out_voice": "Seu tempo de tela de hoje acabou.",
     },
     "ja": {
         "title": "スクリーンタイム",
@@ -112,6 +140,10 @@ SUPPORTED_LANG_PHRASES = {
         "warn5_voice": "スクリーンタイムはあと5分です。",
         "warn1_body": "スクリーンタイムはあと1分です。",
         "warn1_voice": "スクリーンタイムはあと1分です。",
+        "login_remaining_body": "今日はスクリーンタイムがあと{minutes}分残っています。",
+        "login_remaining_voice": "今日はスクリーンタイムがあと{minutes}分残っています。",
+        "login_out_body": "今日はスクリーンタイムがもうありません。",
+        "login_out_voice": "今日のスクリーンタイムは終わりました。",
     },
     "zh": {
         "title": "屏幕使用时间",
@@ -120,6 +152,10 @@ SUPPORTED_LANG_PHRASES = {
         "warn5_voice": "屏幕时间还剩五分钟。",
         "warn1_body": "屏幕时间还剩 1 分钟。",
         "warn1_voice": "屏幕时间还剩一分钟。",
+        "login_remaining_body": "今天还剩 {minutes} 分钟的屏幕时间。",
+        "login_remaining_voice": "今天还剩 {minutes} 分钟的屏幕时间。",
+        "login_out_body": "今天的屏幕时间已用完。",
+        "login_out_voice": "今天的屏幕时间已经用完了。",
     },
 }
 
@@ -427,9 +463,7 @@ class ScreenTimeAgent:
         self._warned_1 = False
         self._last_active_app: Optional[str] = None
         self._discovery_published = False
-        self._budget_minutes: Optional[float] = None
-        self._warned_5 = False
-        self._warned_1 = False
+        self._login_announced = False
 
     def _phrase(self, key: str) -> str:
         lang = self._language if self._language in SUPPORTED_LANG_PHRASES else "en"
@@ -684,6 +718,7 @@ class ScreenTimeAgent:
             self._budget_minutes = max(0.0, budget_val)
             self._warned_5 = False
             self._warned_1 = False
+            self._maybe_announce_initial_remaining()
             return
 
         allowed = _as_bool(payload)
@@ -879,6 +914,31 @@ class ScreenTimeAgent:
         except Exception:
             self.logger.debug("Unable to read frontmost app.", exc_info=True)
             return None
+
+    def _maybe_announce_initial_remaining(self) -> None:
+        if self._login_announced or self._budget_minutes is None:
+            return
+        try:
+            remaining = int(max(0.0, self._budget_minutes - self.state.minutes_today()))
+            title = self._phrase("title") or "Screen Time"
+            if remaining > 0:
+                body = self._phrase("login_remaining_body").format(minutes=remaining)
+                voice = self._phrase("login_remaining_voice").format(minutes=remaining)
+            else:
+                body = self._phrase("login_out_body")
+                voice = self._phrase("login_out_voice")
+            script = f'display notification "{body}" with title "{title}"'
+            subprocess.run(
+                ["/usr/bin/osascript", "-e", script],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._speak(voice)
+        except Exception:
+            self.logger.debug("Failed to announce remaining time.", exc_info=True)
+        finally:
+            self._login_announced = True
 
     def _notify_remaining(self, minutes: int, voice_only: bool = False) -> None:
         voice_key = "warn5_voice" if minutes >= 5 else "warn1_voice"
