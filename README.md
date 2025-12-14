@@ -94,6 +94,7 @@ automation:
 | Field | Required | Notes |
 |-------|----------|-------|
 | `child_id` | ✅ | Used in HA topics and discovery device name. |
+| `managed_users` | ➖ | List of mappings for multi-child Macs. Each entry: `mac_user_account`, `child_name`, optional `topic_prefix`, optional `device_id`. If present, the agent runs only when the current macOS user matches an entry and uses that child_name/topics. |
 | `device_id` | ➖ | Defaults to sanitized hostname. |
 | `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password`, `mqtt_tls` | ✅ | MQTT connectivity (TLS optional). |
 | `topic_prefix` | ✅ | Must start with `screen/<child_id>`. |
@@ -107,8 +108,23 @@ automation:
 | `log_file`, `err_log_file` | ➖ | Defaults `/tmp/ha_screen_agent.{out,err}.log`. |
 | `debug_mqtt` | ➖ | Set true for verbose client logging. |
 | `track_active_app` | ➖ | Publish frontmost app name to MQTT. |
+| `allowed_users` | ➖ | Legacy allowlist for sessions; superseded by `managed_users` when provided. |
 
 Edit as admin; keep it root-owned and readable by the child account (e.g., root:<child_group> 0640). The installer prompts for basics when no config exists.
+
+Example for two kids on one Mac:
+
+```json
+{
+  "mqtt_host": "mqtt.local",
+  "child_id": "fallback",
+  "topic_prefix": "screen/fallback",
+  "managed_users": [
+    { "mac_user_account": "kid1", "child_name": "alice" },
+    { "mac_user_account": "kid2", "child_name": "bob", "topic_prefix": "screen/bobmac" }
+  ]
+}
+```
 
 ## MQTT ACL example (per child)
 
