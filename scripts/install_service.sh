@@ -44,8 +44,8 @@ prompt_boolean() {
 build_config_interactive() {
     echo "No existing config found. Let's create one." >&2
     echo "Press enter to accept the default value." >&2
-    read -r -p "Child ID (e.g., kiddo): " CHILD_ID
-    CHILD_ID=${CHILD_ID:-kiddo}
+    read -r -p "Child name (for MQTT topics, e.g., kiddo): " CHILD_NAME
+    CHILD_NAME=${CHILD_NAME:-kiddo}
     read -r -p "Device ID [auto]: " DEVICE_ID
     if [[ -z "$DEVICE_ID" ]]; then
         DEVICE_ID=$(hostname -s | tr '[:upper:] ' '[:lower:]-' | tr -cd '[:alnum:]-_')
@@ -58,39 +58,43 @@ build_config_interactive() {
     read -r -p "MQTT username (blank for none): " MQTT_USER
     read -r -s -p "MQTT password (not shown, blank for none): " MQTT_PASS; echo
     MQTT_TLS=$(prompt_boolean "Use MQTT TLS?" "n")
-    read -r -p "Topic prefix [screen/$CHILD_ID]: " TOPIC_PREFIX
-    TOPIC_PREFIX=${TOPIC_PREFIX:-screen/$CHILD_ID}
-    DEFAULT_ALLOWED="[$CHILD_ID]"
-    read -r -p "Allowed users (comma-separated) [$DEFAULT_ALLOWED]: " ALLOWED_USERS_RAW
-    ALLOWED_USERS_RAW=${ALLOWED_USERS_RAW:-$DEFAULT_ALLOWED}
+    DEFAULT_MAC_USER=${SUDO_USER:-${USER:-$CHILD_NAME}}
+    read -r -p "Managed users (mac_user=child_name, comma-separated) [$DEFAULT_MAC_USER=$CHILD_NAME]: " MANAGED_USERS_RAW
+    MANAGED_USERS_RAW=${MANAGED_USERS_RAW:-$DEFAULT_MAC_USER=$CHILD_NAME}
     TRACK_ACTIVE_APP=$(prompt_boolean "Publish frontmost app sensor?" "n")
 
-    ALLOWED_JSON=""
-    IFS=',' read -ra PARTS <<<"$ALLOWED_USERS_RAW"
+    MANAGED_JSON=""
+    IFS=',' read -ra PARTS <<<"$MANAGED_USERS_RAW"
     for part in "${PARTS[@]}"; do
         part=$(echo "$part" | xargs)
         [[ -z "$part" ]] && continue
-        ALLOWED_JSON+="${ALLOWED_JSON:+, }\"$part\""
+        mac_user="${part%%=*}"
+        child_name="${part#*=}"
+        if [[ "$part" != *"="* ]]; then
+            child_name="$CHILD_NAME"
+        fi
+        mac_user=$(echo "$mac_user" | xargs)
+        child_name=$(echo "$child_name" | xargs)
+        [[ -z "$mac_user" || -z "$child_name" ]] && continue
+        MANAGED_JSON+="${MANAGED_JSON:+, }{\"mac_user_account\": \"${mac_user}\", \"child_name\": \"${child_name}\", \"topic_prefix\": \"screen/${child_name}\"}"
     done
-    ALLOWED_JSON="[$ALLOWED_JSON]"
+    MANAGED_JSON="[$MANAGED_JSON]"
 
     TMP_CONFIG=$(mktemp)
     cat >"$TMP_CONFIG" <<EOF
 {
-  "child_id": "$CHILD_ID",
   "device_id": "$DEVICE_ID",
   "mqtt_host": "$MQTT_HOST",
   "mqtt_port": $MQTT_PORT,
   "mqtt_username": "$MQTT_USER",
   "mqtt_password": "$MQTT_PASS",
   "mqtt_tls": $MQTT_TLS,
-  "topic_prefix": "$TOPIC_PREFIX",
   "sample_interval_seconds": 15,
   "idle_timeout_seconds": 180,
   "enforcement_mode": "lock",
   "fail_mode": "safe",
   "offline_grace_period_seconds": 180,
-  "allowed_users": $ALLOWED_JSON,
+  "managed_users": $MANAGED_JSON,
   "state_path": "~/Library/Application Support/ha-screen-agent/state.json",
   "log_file": "/tmp/ha_screen_agent.out.log",
   "err_log_file": "/tmp/ha_screen_agent.err.log",
@@ -212,7 +216,7 @@ EOF
 chmod 0644 "$PLIST_PATH"
 chown root:wheel "$PLIST_PATH"
 
-CHILD_USER="$(
+CHILD_USERS="$(
     CONFIG_PATH="$CONFIG_PATH" "$PYTHON_BIN" - <<'PY'
 import json, os
 path = os.environ.get("CONFIG_PATH")
@@ -223,19 +227,21 @@ try:
         data = json.load(fp)
 except Exception:
     raise SystemExit(0)
-users = data.get("allowed_users") or []
-for candidate in users:
-    candidate = (candidate or "").strip()
-    if candidate:
-        print(candidate)
-        break
+users = []
+for entry in data.get("managed_users") or []:
+    mac = (entry.get("mac_user_account") or "").strip()
+    if mac:
+        users.append(mac)
+for user in users:
+    print(user)
 PY
 )"
 
 CONFIG_GROUP="wheel"
 CONFIG_MODE="0644"
-if [[ -n "$CHILD_USER" && "$(id -un "$CHILD_USER" 2>/dev/null)" == "$CHILD_USER" ]]; then
-    CHILD_GROUP="$(id -gn "$CHILD_USER" 2>/dev/null || true)"
+FIRST_CHILD_USER="$(echo "$CHILD_USERS" | head -n1)"
+if [[ -n "$FIRST_CHILD_USER" && "$(id -un "$FIRST_CHILD_USER" 2>/dev/null)" == "$FIRST_CHILD_USER" ]]; then
+    CHILD_GROUP="$(id -gn "$FIRST_CHILD_USER" 2>/dev/null || true)"
     if [[ -n "$CHILD_GROUP" ]]; then
         CONFIG_GROUP="$CHILD_GROUP"
         CONFIG_MODE="0640"
@@ -246,22 +252,25 @@ chown root:"$CONFIG_GROUP" "$CONFIG_PATH"
 chmod "$CONFIG_MODE" "$CONFIG_PATH"
 echo "Config permissions set to $CONFIG_MODE (group: $CONFIG_GROUP)."
 
-if [[ -n "$CHILD_USER" ]]; then
-    if id "$CHILD_USER" >/dev/null 2>&1; then
-        CHILD_UID="$(id -u "$CHILD_USER")"
-        echo "Bootstrapping LaunchAgent for GUI session user '${CHILD_USER}' (uid ${CHILD_UID})."
-        launchctl bootout "gui/${CHILD_UID}" "$PLIST_PATH" >/dev/null 2>&1 || true
-        if launchctl bootstrap "gui/${CHILD_UID}" "$PLIST_PATH"; then
-            echo "LaunchAgent loaded for ${CHILD_USER}."
+if [[ -n "$CHILD_USERS" ]]; then
+    while IFS= read -r CHILD_USER; do
+        [[ -z "$CHILD_USER" ]] && continue
+        if id "$CHILD_USER" >/dev/null 2>&1; then
+            CHILD_UID="$(id -u "$CHILD_USER")"
+            echo "Bootstrapping LaunchAgent for GUI session user '${CHILD_USER}' (uid ${CHILD_UID})."
+            launchctl bootout "gui/${CHILD_UID}" "$PLIST_PATH" >/dev/null 2>&1 || true
+            if launchctl bootstrap "gui/${CHILD_UID}" "$PLIST_PATH"; then
+                echo "LaunchAgent loaded for ${CHILD_USER}."
+            else
+                echo "Failed to bootstrap LaunchAgent for ${CHILD_USER}. Log in as that user and run:" >&2
+                echo "  launchctl bootstrap gui/${CHILD_UID} $PLIST_PATH" >&2
+            fi
         else
-            echo "Failed to bootstrap LaunchAgent for ${CHILD_USER}. Log in as that user and run:" >&2
-            echo "  launchctl bootstrap gui/${CHILD_UID} $PLIST_PATH" >&2
+            echo "Warning: managed_users entry '${CHILD_USER}' is not a local user. LaunchAgent not bootstrapped for this account." >&2
         fi
-    else
-        echo "Warning: allowed_users entry '${CHILD_USER}' is not a local user. LaunchAgent not bootstrapped." >&2
-    fi
+    done <<<"$CHILD_USERS"
 else
-    echo "No 'allowed_users' configured. LaunchAgent installed but not bootstrapped."
+    echo "No 'managed_users' configured. LaunchAgent installed but not bootstrapped."
     echo "Log in as the child user and run: launchctl bootstrap gui/\$(id -u) $PLIST_PATH"
 fi
 
@@ -272,7 +281,7 @@ Config location    : $CONFIG_PATH
 LaunchAgent        : $PLIST_PATH
 
 Next steps:
-  1. Confirm config values (child_id, device_id, MQTT credentials) are correct in $CONFIG_PATH.
+  1. Confirm config values (managed_users, device_id, MQTT credentials) are correct in $CONFIG_PATH.
   2. In Home Assistant, add the automations from the README (allow under budget, block when out, reset daily) and confirm MQTT topics match.
   3. Log into the child account and verify the agent is running:
        log show --predicate 'process == "python3"' --last 5m | grep ha-screen-agent
