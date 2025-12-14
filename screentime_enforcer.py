@@ -243,7 +243,7 @@ class AgentConfig:
     idle_timeout_seconds: int = 120
     enforcement_mode: str = "lock"  # lock | logout
     fail_mode: str = "safe"  # safe | open
-    offline_grace_period_seconds: int = 180
+    offline_grace_period_seconds: int = 0
     state_path: Path = DEFAULT_STATE_PATH
     log_file: str = DEFAULT_LOG_PATH
     err_log_file: str = DEFAULT_ERR_LOG_PATH
@@ -330,7 +330,7 @@ class AgentConfig:
         if fail_mode not in {"safe", "open"}:
             raise ValueError("`fail_mode` must be safe or open.")
 
-        grace = int(data.get("offline_grace_period_seconds", 180))
+        grace = int(data.get("offline_grace_period_seconds", 0))
         if grace < 0 or grace > 900:
             raise ValueError("`offline_grace_period_seconds` must be between 0 and 900.")
 
@@ -746,7 +746,7 @@ class ScreenTimeAgent:
         self.logger.info("Allowed state updated to %s", allowed)
 
 
-        if previous is not None and previous != allowed and not allowed:
+        if not allowed and (previous is None or previous != allowed):
             self._enforce_block()
 
     # ----------------------------------------------------------- MAIN LOOP --
