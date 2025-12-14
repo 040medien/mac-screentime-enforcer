@@ -58,7 +58,7 @@ build_config_interactive() {
     read -r -p "MQTT username (blank for none): " MQTT_USER
     read -r -s -p "MQTT password (not shown, blank for none): " MQTT_PASS; echo
     MQTT_TLS=$(prompt_boolean "Use MQTT TLS?" "n")
-    DEFAULT_MAC_USER=${SUDO_USER:-${USER:-$CHILD_NAME}}
+    DEFAULT_MAC_USER="$CHILD_NAME"
     read -r -p "Managed users (mac_user=child_name, comma-separated) [$DEFAULT_MAC_USER=$CHILD_NAME]: " MANAGED_USERS_RAW
     MANAGED_USERS_RAW=${MANAGED_USERS_RAW:-$DEFAULT_MAC_USER=$CHILD_NAME}
     TRACK_ACTIVE_APP=$(prompt_boolean "Publish frontmost app sensor?" "n")

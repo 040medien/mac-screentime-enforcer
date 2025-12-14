@@ -20,7 +20,7 @@ Hardened macOS LaunchAgent that tracks a child’s Mac usage, reports it to Home
 1. Install Command Line Tools: `xcode-select --install`
 2. Clone: `git clone https://github.com/your-org/mac-screentime-enforcer.git && cd mac-screentime-enforcer`
 3. Install as root: `sudo ./scripts/install_service.sh`
-   - Prompts for child name, device ID, MQTT host/creds, managed users (mac_user=child_name pairs), optional active-app sensor if no config exists.
+   - Prompts for child name, device ID, MQTT host/creds, managed users (mac_user=child_name pairs), optional active-app sensor if no config exists. Default managed user is the child name (set it to the child’s macOS short name if different).
    - Reuse an existing config via `--config /path/to/config.json`.
 4. Update later: edit `/Library/Application Support/ha-screen-agent/config.json` as root, rerun the installer.
 5. Log in as the child and verify: `log show --predicate 'process == "python3"' --last 5m | grep ha-screen-agent`
