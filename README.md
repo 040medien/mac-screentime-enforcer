@@ -89,7 +89,8 @@ automation:
       # Minutes reset locally at midnight; add more reset tasks here if needed
 ```
 
-## Configuration (`/Library/Application Support/ha-screen-agent/config.json`)
+## Configuration
+Configuration lives in `/Library/Application Support/ha-screen-agent/config.json`
 
 | Field | Required | Notes |
 |-------|----------|-------|
