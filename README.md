@@ -20,7 +20,7 @@ Hardened macOS LaunchAgent that tracks a child’s Mac usage, reports it to Home
 1. Install Command Line Tools: `xcode-select --install`
 2. Clone: `git clone https://github.com/your-org/mac-screentime-enforcer.git && cd mac-screentime-enforcer`
 3. Install as root: `sudo ./scripts/install_service.sh`
-   - Prompts for child/device IDs, MQTT host/creds, topic prefix, allowed users, optional active-app sensor if no config exists.
+   - Prompts for child name, device ID, MQTT host/creds, managed users (mac_user=child_name pairs), optional active-app sensor if no config exists. Default managed user is the child name (set it to the child’s macOS short name if different).
    - Reuse an existing config via `--config /path/to/config.json`.
 4. Update later: edit `/Library/Application Support/ha-screen-agent/config.json` as root, rerun the installer.
 5. Log in as the child and verify: `log show --predicate 'process == "python3"' --last 5m | grep ha-screen-agent`
@@ -89,26 +89,37 @@ automation:
       # Minutes reset locally at midnight; add more reset tasks here if needed
 ```
 
-## Configuration (`/Library/Application Support/ha-screen-agent/config.json`)
+## Configuration
+Configuration lives in `/Library/Application Support/ha-screen-agent/config.json`
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `child_id` | ✅ | Used in HA topics and discovery device name. |
-| `device_id` | ➖ | Defaults to sanitized hostname. |
+| `managed_users` | ✅ | List of mappings (one per macOS account to manage). Each entry: `mac_user_account`, `child_name` (letters/numbers/hyphen/underscore), optional `topic_prefix` (must start with `screen/<child_name>`), optional `device_id`. The agent only runs when the current macOS user matches an entry and uses that child name for topics/discovery. |
+| `device_id` | ➖ | Defaults to sanitized hostname if not set in the entry. |
 | `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password`, `mqtt_tls` | ✅ | MQTT connectivity (TLS optional). |
-| `topic_prefix` | ✅ | Must start with `screen/<child_id>`. |
 | `sample_interval_seconds` | ➖ | 5–60, default 15. |
 | `idle_timeout_seconds` | ➖ | Idle threshold in seconds, default 120. |
 | `enforcement_mode` | ➖ | `lock` (default) or `logout`. |
 | `fail_mode` | ➖ | `safe` (fail closed) or `open`. |
 | `offline_grace_period_seconds` | ➖ | Default 180. |
-| `allowed_users` | ➖ | macOS short names allowed to run the agent. |
 | `state_path` | ➖ | Defaults to `~/Library/Application Support/ha-screen-agent/state.json`. |
 | `log_file`, `err_log_file` | ➖ | Defaults `/tmp/ha_screen_agent.{out,err}.log`. |
 | `debug_mqtt` | ➖ | Set true for verbose client logging. |
 | `track_active_app` | ➖ | Publish frontmost app name to MQTT. |
 
 Edit as admin; keep it root-owned and readable by the child account (e.g., root:<child_group> 0640). The installer prompts for basics when no config exists.
+
+Example for two kids on one Mac:
+
+```json
+{
+  "mqtt_host": "mqtt.local",
+  "managed_users": [
+    { "mac_user_account": "kid1", "child_name": "alice" },
+    { "mac_user_account": "kid2", "child_name": "bob", "topic_prefix": "screen/bobmac" }
+  ]
+}
+```
 
 ## MQTT ACL example (per child)
 
@@ -144,7 +155,7 @@ pattern read  $
 - Install and own all files as `root:wheel`; child account stays non-admin.
 - LaunchAgent lives in `/Library/LaunchAgents` and is bootstrapped into the child’s GUI session.
 - Default behavior is **fail-safe**: when MQTT is down beyond the grace window, the Mac locks until connectivity returns.
-- `allowed_users` limits where the agent runs; broker ACLs should still enforce per-child topics.
+- `managed_users` controls which macOS accounts the agent will run under; broker ACLs should still enforce per-child topics.
 
 ## Troubleshooting
 

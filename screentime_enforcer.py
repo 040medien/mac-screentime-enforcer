@@ -20,6 +20,7 @@ import logging
 import os
 import locale
 import platform
+import re
 import signal
 import subprocess
 import sys
@@ -169,6 +170,16 @@ def _sanitize_device_id(value: str) -> str:
     return sanitized or "mac"
 
 
+def _validate_topic_segment(value: str, field: str) -> str:
+    if not value:
+        raise ValueError(f"Config `{field}` is required.")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise ValueError(
+            f"Config `{field}` must use only letters, numbers, hyphens, or underscores (got {value!r})."
+        )
+    return value
+
+
 def _now_local() -> datetime:
     return datetime.now().astimezone()
 
@@ -197,15 +208,16 @@ class AgentConfig:
     enforcement_mode: str = "lock"  # lock | logout
     fail_mode: str = "safe"  # safe | open
     offline_grace_period_seconds: int = 180
-    allowed_users: Optional[List[str]] = None
     state_path: Path = DEFAULT_STATE_PATH
     log_file: str = DEFAULT_LOG_PATH
     err_log_file: str = DEFAULT_ERR_LOG_PATH
     debug_mqtt: bool = False
     track_active_app: bool = False
+    managed_user: Optional[str] = None
 
     @classmethod
-    def load(cls, path: Path) -> "AgentConfig":
+    def load(cls, path: Path, session_user: Optional[str] = None) -> Optional["AgentConfig"]:
+        session_user = session_user or os.environ.get("USER") or os.path.basename(Path.home())
         if not path.exists():
             raise FileNotFoundError(
                 f"Required config file missing at {path}. "
@@ -214,22 +226,51 @@ class AgentConfig:
         with path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
 
-        child_id = data.get("child_id", "").strip()
-        if not child_id:
-            raise ValueError("Config `child_id` is required.")
+        managed_user: Optional[str] = None
 
-        topic_prefix = data.get("topic_prefix", f"screen/{child_id}")
+        managed_users_raw = data.get("managed_users")
+        if not managed_users_raw:
+            raise ValueError("Config `managed_users` is required (list of objects).")
+        if not isinstance(managed_users_raw, list):
+            raise ValueError("`managed_users` must be a list of mappings.")
+
+        selected = None
+        for entry in managed_users_raw:
+            if not isinstance(entry, dict):
+                raise ValueError("Each entry in `managed_users` must be an object.")
+            mac_user = (entry.get("mac_user_account") or "").strip()
+            child_name = (entry.get("child_name") or "").strip()
+            entry_prefix = (entry.get("topic_prefix") or "").strip()
+            entry_device = (entry.get("device_id") or "").strip()
+            if not mac_user or not child_name:
+                raise ValueError("`managed_users` entries require mac_user_account and child_name.")
+            if session_user and mac_user == session_user:
+                selected = {
+                    "mac_user_account": mac_user,
+                    "child_name": child_name,
+                    "topic_prefix": entry_prefix,
+                    "device_id": entry_device,
+                }
+                break
+
+        if selected is None:
+            return None
+
+        managed_user = selected["mac_user_account"]
+        child_id = _validate_topic_segment(selected["child_name"], "child_name")
+        topic_prefix = selected["topic_prefix"] or f"screen/{child_id}"
         if not topic_prefix.startswith(f"screen/{child_id}"):
             raise ValueError(
                 "Config `topic_prefix` must start with `screen/<child_id>` "
                 f"(expected prefix `screen/{child_id}`)."
             )
+        device_id_raw = selected["device_id"] or data.get("device_id")
 
         mqtt_host = data.get("mqtt_host", "").strip()
         if not mqtt_host:
             raise ValueError("Config `mqtt_host` is required.")
 
-        device_id = data.get("device_id")
+        device_id = device_id_raw
         if not device_id:
             device_id = _sanitize_device_id(platform.node() or "mac")
 
@@ -266,18 +307,6 @@ class AgentConfig:
         debug_mqtt = bool(data.get("debug_mqtt", False))
         track_active_app = bool(data.get("track_active_app", False))
 
-        allowed_users_raw = data.get("allowed_users")
-        if allowed_users_raw is not None:
-            if not isinstance(allowed_users_raw, list) or not all(
-                isinstance(item, str) for item in allowed_users_raw
-            ):
-                raise ValueError("`allowed_users` must be a list of macOS short names.")
-            allowed_users = [item.strip() for item in allowed_users_raw if item.strip()]
-            if not allowed_users:
-                allowed_users = None
-        else:
-            allowed_users = None
-
         return cls(
             child_id=child_id,
             device_id=_sanitize_device_id(device_id),
@@ -295,9 +324,9 @@ class AgentConfig:
             state_path=state_path,
             log_file=log_file,
             err_log_file=err_file,
-            allowed_users=allowed_users,
             debug_mqtt=debug_mqtt,
             track_active_app=track_active_app,
+            managed_user=managed_user,
         )
 
     @property
@@ -983,22 +1012,21 @@ def _setup_logging(cfg: AgentConfig) -> None:
 
 
 def main() -> None:
+    current_user = os.environ.get("USER") or os.path.basename(Path.home())
     config_path = Path(
         os.environ.get("HA_SCREEN_AGENT_CONFIG", DEFAULT_CONFIG_PATH)
     ).expanduser()
     try:
-        cfg = AgentConfig.load(config_path)
+        cfg = AgentConfig.load(config_path, session_user=current_user)
+        if cfg is None:
+            print(
+                f"Current user '{current_user}' not listed in managed_users; exiting quietly.",
+                file=sys.stderr,
+            )
+            sys.exit(0)
     except Exception as exc:  # pragma: no cover - startup validation
         print(f"Failed to load config: {exc}", file=sys.stderr)
         sys.exit(2)
-
-    current_user = os.environ.get("USER") or os.path.basename(Path.home())
-    if cfg.allowed_users and current_user not in cfg.allowed_users:
-        print(
-            f"Current user '{current_user}' not in allowed_users. Exiting quietly.",
-            file=sys.stderr,
-        )
-        sys.exit(0)
 
     _setup_logging(cfg)
     agent = ScreenTimeAgent(cfg)
