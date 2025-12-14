@@ -759,7 +759,9 @@ class ScreenTimeAgent:
                 self._last_tick = loop_start
 
                 self.state.ensure_today()
-                active = self._is_active_session()
+                allowed_now = self._current_allowed_state()
+                blocked = not allowed_now
+                active = False if blocked else self._is_active_session()
                 if active:
                     self.state.add_seconds(elapsed)
 
@@ -770,9 +772,14 @@ class ScreenTimeAgent:
 
                 self._maybe_save_state()
                 self._publish_metrics_if_needed(
-                    active_now=active, active_app=active_app, force=not self._mqtt_connected
+                    active_now=active,
+                    active_app=active_app,
+                    force=blocked or not self._mqtt_connected,
                 )
-                self._enforce_if_required(active_now=active)
+                if blocked:
+                    self._enforce_block(active_now=active)
+                else:
+                    self._enforce_if_required(active_now=active)
 
                 sleep_time = max(1.0, float(self.config.sample_interval_seconds))
                 time.sleep(sleep_time)
