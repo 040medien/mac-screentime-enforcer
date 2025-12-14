@@ -427,9 +427,7 @@ class ScreenTimeAgent:
         self._warned_1 = False
         self._last_active_app: Optional[str] = None
         self._discovery_published = False
-        self._budget_minutes: Optional[float] = None
-        self._warned_5 = False
-        self._warned_1 = False
+        self._login_announced = False
 
     def _phrase(self, key: str) -> str:
         lang = self._language if self._language in SUPPORTED_LANG_PHRASES else "en"
@@ -684,6 +682,7 @@ class ScreenTimeAgent:
             self._budget_minutes = max(0.0, budget_val)
             self._warned_5 = False
             self._warned_1 = False
+            self._maybe_announce_initial_remaining()
             return
 
         allowed = _as_bool(payload)
@@ -879,6 +878,31 @@ class ScreenTimeAgent:
         except Exception:
             self.logger.debug("Unable to read frontmost app.", exc_info=True)
             return None
+
+    def _maybe_announce_initial_remaining(self) -> None:
+        if self._login_announced or self._budget_minutes is None:
+            return
+        try:
+            remaining = int(max(0.0, self._budget_minutes - self.state.minutes_today()))
+            title = self._phrase("title") or "Screen Time"
+            if remaining > 0:
+                body = f"You have {remaining} minutes of screen time left today."
+                voice = body
+            else:
+                body = "Screen time is out for today."
+                voice = "Your screen time is used up for today."
+            script = f'display notification "{body}" with title "{title}"'
+            subprocess.run(
+                ["/usr/bin/osascript", "-e", script],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._speak(voice)
+        except Exception:
+            self.logger.debug("Failed to announce remaining time.", exc_info=True)
+        finally:
+            self._login_announced = True
 
     def _notify_remaining(self, minutes: int, voice_only: bool = False) -> None:
         voice_key = "warn5_voice" if minutes >= 5 else "warn1_voice"
