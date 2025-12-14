@@ -20,6 +20,7 @@ import logging
 import os
 import locale
 import platform
+import re
 import signal
 import subprocess
 import sys
@@ -169,6 +170,16 @@ def _sanitize_device_id(value: str) -> str:
     return sanitized or "mac"
 
 
+def _validate_topic_segment(value: str, field: str) -> str:
+    if not value:
+        raise ValueError(f"Config `{field}` is required.")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise ValueError(
+            f"Config `{field}` must use only letters, numbers, hyphens, or underscores (got {value!r})."
+        )
+    return value
+
+
 def _now_local() -> datetime:
     return datetime.now().astimezone()
 
@@ -246,12 +257,13 @@ class AgentConfig:
             if selected is None:
                 return None
             managed_user = selected["mac_user_account"]
-            child_id = selected["child_name"]
+            child_id = _validate_topic_segment(selected["child_name"], "child_name")
             topic_prefix = selected["topic_prefix"] or f"screen/{child_id}"
             device_id_raw = selected["device_id"] or device_id_raw
 
         if not child_id:
             raise ValueError("Config `child_id` is required.")
+        child_id = _validate_topic_segment(child_id, "child_id")
 
         topic_prefix = topic_prefix or f"screen/{child_id}"
         if not topic_prefix.startswith(f"screen/{child_id}"):

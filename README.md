@@ -93,8 +93,8 @@ automation:
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `child_id` | ✅ | Used in HA topics and discovery device name. |
-| `managed_users` | ➖ | List of mappings for multi-child Macs. Each entry: `mac_user_account`, `child_name`, optional `topic_prefix`, optional `device_id`. If present, the agent runs only when the current macOS user matches an entry and uses that child_name/topics. |
+| `child_id` | ✅ | Used in HA topics and discovery device name. Must use letters/numbers/hyphen/underscore. |
+| `managed_users` | ➖ | List of mappings for multi-child Macs. Each entry: `mac_user_account`, `child_name` (letters/numbers/hyphen/underscore), optional `topic_prefix`, optional `device_id`. If present, the agent runs only when the current macOS user matches an entry and uses that child_name/topics. |
 | `device_id` | ➖ | Defaults to sanitized hostname. |
 | `mqtt_host`, `mqtt_port`, `mqtt_username`, `mqtt_password`, `mqtt_tls` | ✅ | MQTT connectivity (TLS optional). |
 | `topic_prefix` | ✅ | Must start with `screen/<child_id>`. |
