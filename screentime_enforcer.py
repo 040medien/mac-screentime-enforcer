@@ -765,6 +765,7 @@ class ScreenTimeAgent:
 
                 minutes_now = self.state.minutes_today()
                 self._check_budget_warnings(minutes_today=minutes_now)
+                self._maybe_announce_initial_remaining()
                 active_app = self._frontmost_app_name() if self.config.track_active_app else None
 
                 self._maybe_save_state()
