@@ -453,7 +453,8 @@ class ScreenTimeAgent:
         return rc_map.get(rc, "unknown")
 
     def _build_mqtt_client(self) -> mqtt.Client:
-        client_id = f"ha-screen-agent-{self.config.device_id}"
+        suffix = self.config.managed_user or self.config.child_id
+        client_id = f"ha-screen-agent-{self.config.device_id}-{suffix}"
         client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=client_id,
