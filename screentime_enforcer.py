@@ -405,6 +405,10 @@ class AgentConfig:
     def active_app_topic(self) -> str:
         return f"{self.topic_prefix}/mac/{self.device_id}/active_app"
 
+    @property
+    def override_state_topic(self) -> str:
+        return f"homeassistant/{self.discovery_base_id}/override/state"
+
 
 class UsageState:
     def __init__(self, path: Path):
@@ -622,8 +626,8 @@ class ScreenTimeAgent:
                     {
                         "name": f"{self.config.child_id} Mac Parent Override",
                         "unique_id": f"{base_id}_parent_override",
-                        "state_topic": f"homeassistant/{base_id}/override/state",
-                        "command_topic": f"homeassistant/{base_id}/override/state",
+                        "state_topic": self.config.override_state_topic,
+                        "command_topic": self.config.override_state_topic,
                         "payload_on": "ON",
                         "payload_off": "OFF",
                         "icon": "mdi:shield-star",
@@ -635,6 +639,10 @@ class ScreenTimeAgent:
             for domain, obj_id, payload in disc:
                 topic = f"homeassistant/{domain}/{obj_id}/config"
                 self._mqtt_client.publish(topic, json.dumps(payload), retain=True, qos=1)
+            # Ensure the override switch has a defined initial state for automations.
+            self._mqtt_client.publish(
+                self.config.override_state_topic, payload="OFF", retain=True, qos=1
+            )
             self._discovery_published = True
         except Exception:
             self.logger.warning("Failed to publish MQTT discovery topics.", exc_info=True)
