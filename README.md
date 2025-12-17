@@ -47,33 +47,42 @@ Update IDs to match your discovered entities (`base_id = child_id + "_" + device
 
 ```yaml
 automation:
-  - alias: "Kiddo Mac - Block when budget exceeded"
+  - alias: "Kiddo Mac Budget Enforcement"
+    description: "Publishes allowed=0/1 based on minutes vs budget (skips when parent override is on)."
     trigger:
-      - platform: numeric_state
+      - platform: state
         entity_id: sensor.kiddo_macbookpro_mac_minutes
-        above: number.kiddo_macbookpro_mac_daily_budget_minutes
     condition:
-      - condition: state
-        entity_id: switch.kiddo_macbookpro_mac_parent_override
-        state: "off"
+      - condition: not
+        conditions:
+          - condition: state
+            entity_id: switch.kiddo_macbookpro_mac_parent_override
+            state: "on"
     action:
-      - service: switch.turn_off
-        target:
-          entity_id: switch.kiddo_macbookpro_mac_allowed
-
-  - alias: "Kiddo Mac - Allow when back under budget"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.kiddo_macbookpro_mac_minutes
-        below: number.kiddo_macbookpro_mac_daily_budget_minutes
-    condition:
-      - condition: state
-        entity_id: switch.kiddo_macbookpro_mac_parent_override
-        state: "off"
-    action:
-      - service: switch.turn_on
-        target:
-          entity_id: switch.kiddo_macbookpro_mac_allowed
+      - choose:
+          - conditions:
+              - condition: numeric_state
+                entity_id: sensor.kiddo_macbookpro_mac_minutes
+                above: number.kiddo_macbookpro_mac_daily_budget_min
+            sequence:
+              - service: mqtt.publish
+                data:
+                  topic: screen/kiddo/allowed
+                  qos: 1
+                  retain: true
+                  payload: "0"
+          - conditions:
+              - condition: numeric_state
+                entity_id: sensor.kiddo_macbookpro_mac_minutes
+                below: number.kiddo_macbookpro_mac_daily_budget_min
+            sequence:
+              - service: mqtt.publish
+                data:
+                  topic: screen/kiddo/allowed
+                  qos: 1
+                  retain: true
+                  payload: "1"
+    mode: single
 
   - alias: "Kiddo Mac - Reset each morning"
     trigger:
