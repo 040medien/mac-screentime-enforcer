@@ -34,38 +34,41 @@ input_boolean:
 
 automation:
   - alias: "Kiddo Mac Budget Enforcement"
+    description: "Publishes allowed based on minutes vs budget (skips when parent override is on)."
     trigger:
-      - platform: numeric_state
+      - platform: state
         entity_id: sensor.kiddo_mac_minutes_today
-        above: input_number.kiddo_mac_daily_budget_minutes
     condition:
-      - condition: state
-        entity_id: input_boolean.kiddo_mac_parent_override
-        state: "off"
+      - condition: not
+        conditions:
+          - condition: state
+            entity_id: input_boolean.kiddo_mac_parent_override
+            state: "on"
     action:
-      - service: mqtt.publish
-        data:
-          topic: "screen/kiddo/allowed"
-          qos: 1
-          retain: true
-          payload: "0"
-
-  - alias: "Kiddo Mac Allow When Under Budget"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.kiddo_mac_minutes_today
-        below: input_number.kiddo_mac_daily_budget_minutes
-    condition:
-      - condition: state
-        entity_id: input_boolean.kiddo_mac_parent_override
-        state: "off"
-    action:
-      - service: mqtt.publish
-        data:
-          topic: "screen/kiddo/allowed"
-          qos: 1
-          retain: true
-          payload: "1"
+      - choose:
+          - conditions:
+              - condition: numeric_state
+                entity_id: sensor.kiddo_mac_minutes_today
+                above: input_number.kiddo_mac_daily_budget_minutes
+            sequence:
+              - service: mqtt.publish
+                data:
+                  topic: "screen/kiddo/allowed"
+                  qos: 1
+                  retain: true
+                  payload: "0"
+          - conditions:
+              - condition: numeric_state
+                entity_id: sensor.kiddo_mac_minutes_today
+                below: input_number.kiddo_mac_daily_budget_minutes
+            sequence:
+              - service: mqtt.publish
+                data:
+                  topic: "screen/kiddo/allowed"
+                  qos: 1
+                  retain: true
+                  payload: "1"
+    mode: single
 
   - alias: "Kiddo Mac Override"
     trigger:
