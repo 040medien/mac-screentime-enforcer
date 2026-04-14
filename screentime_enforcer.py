@@ -551,6 +551,9 @@ class ScreenTimeAgent:
         self._last_active_app: Optional[str] = None
         self._discovery_published = False
         self._login_announced = False
+        self._rapid_relogin_warned_count = 0
+        self._last_session_locked = self._is_session_locked()
+        self._blocked_unlock_counted = False
 
     def _phrase(self, key: str) -> str:
         lang = self._language if self._language in SUPPORTED_LANG_PHRASES else "en"
