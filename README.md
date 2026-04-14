@@ -113,7 +113,12 @@ Configuration lives in `/Library/Application Support/ha-screen-agent/config.json
 | `logout_method` | ➖ | How to force logout when `enforcement_mode=logout`: `osascript` (default, shows a prompt) or `kill_loginwindow` (kills the loginwindow process to bypass prompts). |
 | `fail_mode` | ➖ | `safe` (fail closed) or `open`. |
 | `offline_grace_period_seconds` | ➖ | Default 0. |
-| `state_path` | ➖ | Defaults to `~/Library/Application Support/ha-screen-agent/state.json`. |
+| `rapid_relogin_shutdown_enabled` | ➖ | Default `true`. When enabled, repeated blocked relogins can escalate to shutdown. |
+| `rapid_relogin_window_seconds` | ➖ | Rolling window for blocked relogin attempts; 5–300, default 60. |
+| `rapid_relogin_max_attempts` | ➖ | Number of blocked relogin attempts in the rolling window that triggers shutdown; 2–10, default 4. |
+| `rapid_relogin_warn_attempt` | ➖ | Attempt number that triggers the spoken warning; must be less than `rapid_relogin_max_attempts`, default 3. |
+| `rapid_relogin_warn_voice` | ➖ | Default `true`. Speaks a warning before shutdown escalation. |
+| `state_path` | ➖ | Defaults to `~/Library/Application Support/ha-screen-agent/state.json`. Also stores rapid relogin streak data. |
 | `log_file`, `err_log_file` | ➖ | Defaults `/tmp/ha_screen_agent.{out,err}.log`. |
 | `debug_mqtt` | ➖ | Set true for verbose client logging. |
 | `track_active_app` | ➖ | Publish frontmost app name to MQTT. |
@@ -167,6 +172,7 @@ pattern read  $
 - LaunchAgent lives in `/Library/LaunchAgents` and is bootstrapped into the child’s GUI session.
 - Default behavior is **fail-safe**: when MQTT is down beyond the grace window, the Mac locks until connectivity returns.
 - `managed_users` controls which macOS accounts the agent will run under; broker ACLs should still enforce per-child topics.
+- Rapid relogin protection is enabled by default: if a blocked child unlocks the session 4 times within 60 seconds, the agent warns on attempt 3 and shuts the Mac down on attempt 4.
 
 ## Troubleshooting
 
@@ -176,6 +182,7 @@ pattern read  $
 | Minutes not updating in HA | Confirm MQTT topics via `mosquitto_sub` and broker ACLs allow publishing. |
 | Mac never unlocks after MQTT outage | Verify `offline_grace_period_seconds`, network reachability, and retained `allowed=1`. |
 | Child can still use Mac when blocked | Ensure HA publishes retained `allowed=0`, LaunchAgent is running, and enforcement mode is set correctly. |
+| Mac shuts down after repeated blocked relogins | This is expected when rapid relogin protection is enabled. Tune `rapid_relogin_*` settings if the window or threshold is too aggressive. |
 
 ### Harder lockouts (when logout prompts appear)
 
