@@ -220,6 +220,10 @@ def _now_local() -> datetime:
     return datetime.now().astimezone()
 
 
+def _escape_applescript_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _as_bool(payload: str) -> Optional[bool]:
     normalized = payload.strip().lower()
     if normalized in {"1", "true", "on", "yes"}:
@@ -246,6 +250,11 @@ class AgentConfig:
     logout_method: str = "osascript"  # osascript | kill_loginwindow
     fail_mode: str = "safe"  # safe | open
     offline_grace_period_seconds: int = 0
+    rapid_relogin_shutdown_enabled: bool = True
+    rapid_relogin_window_seconds: int = 60
+    rapid_relogin_max_attempts: int = 4
+    rapid_relogin_warn_attempt: int = 3
+    rapid_relogin_warn_voice: bool = True
     state_path: Path = DEFAULT_STATE_PATH
     log_file: str = DEFAULT_LOG_PATH
     err_log_file: str = DEFAULT_ERR_LOG_PATH
@@ -344,6 +353,18 @@ class AgentConfig:
         if grace < 0 or grace > 900:
             raise ValueError("`offline_grace_period_seconds` must be between 0 and 900.")
 
+        rapid_relogin_shutdown_enabled = bool(data.get("rapid_relogin_shutdown_enabled", True))
+        rapid_relogin_window_seconds = int(data.get("rapid_relogin_window_seconds", 60))
+        if rapid_relogin_window_seconds < 5 or rapid_relogin_window_seconds > 300:
+            raise ValueError("`rapid_relogin_window_seconds` must be between 5 and 300.")
+        rapid_relogin_max_attempts = int(data.get("rapid_relogin_max_attempts", 4))
+        if rapid_relogin_max_attempts < 2 or rapid_relogin_max_attempts > 10:
+            raise ValueError("`rapid_relogin_max_attempts` must be between 2 and 10.")
+        rapid_relogin_warn_attempt = int(data.get("rapid_relogin_warn_attempt", 3))
+        if rapid_relogin_warn_attempt < 1 or rapid_relogin_warn_attempt >= rapid_relogin_max_attempts:
+            raise ValueError("`rapid_relogin_warn_attempt` must be at least 1 and less than `rapid_relogin_max_attempts`.")
+        rapid_relogin_warn_voice = bool(data.get("rapid_relogin_warn_voice", True))
+
         state_path = Path(
             data.get("state_path", str(DEFAULT_STATE_PATH))
         ).expanduser()
@@ -369,6 +390,11 @@ class AgentConfig:
             logout_method=logout_method,
             fail_mode=fail_mode,
             offline_grace_period_seconds=grace,
+            rapid_relogin_shutdown_enabled=rapid_relogin_shutdown_enabled,
+            rapid_relogin_window_seconds=rapid_relogin_window_seconds,
+            rapid_relogin_max_attempts=rapid_relogin_max_attempts,
+            rapid_relogin_warn_attempt=rapid_relogin_warn_attempt,
+            rapid_relogin_warn_voice=rapid_relogin_warn_voice,
             state_path=state_path,
             log_file=log_file,
             err_log_file=err_file,
@@ -388,6 +414,10 @@ class AgentConfig:
     @property
     def status_topic(self) -> str:
         return f"{self.topic_prefix}/mac/{self.device_id}/status"
+
+    @property
+    def availability_topic(self) -> str:
+        return f"{self.topic_prefix}/mac/{self.device_id}/availability"
 
     @property
     def allow_topic(self) -> str:
@@ -413,15 +443,32 @@ class AgentConfig:
 class UsageState:
     def __init__(self, path: Path):
         self.path = path
-        self._data = {"date": _now_local().date().isoformat(), "seconds_today": 0.0}
+        self._data = {
+            "date": _now_local().date().isoformat(),
+            "seconds_today": 0.0,
+            "rapid_relogin_attempts": [],
+        }
         self._load()
 
     def _load(self) -> None:
         try:
             with self.path.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
+            attempts = data.get("rapid_relogin_attempts")
+            if not isinstance(attempts, list):
+                attempts = []
+            sanitized_attempts = []
+            for attempt in attempts:
+                try:
+                    sanitized_attempts.append(float(attempt))
+                except Exception:
+                    continue
             if data.get("date") == _now_local().date().isoformat():
-                self._data = data
+                self._data = {
+                    "date": data.get("date"),
+                    "seconds_today": float(data.get("seconds_today", 0.0)),
+                    "rapid_relogin_attempts": sanitized_attempts,
+                }
         except FileNotFoundError:
             pass
         except Exception:
@@ -436,6 +483,26 @@ class UsageState:
 
     def minutes_today(self) -> int:
         return int(self._data.get("seconds_today", 0.0) // 60)
+
+    def prune_rapid_relogin_attempts(self, window_seconds: int, now_monotonic: Optional[float] = None) -> None:
+        now_monotonic = time.monotonic() if now_monotonic is None else now_monotonic
+        attempts = self._data.get("rapid_relogin_attempts", [])
+        self._data["rapid_relogin_attempts"] = [
+            float(attempt) for attempt in attempts if now_monotonic - float(attempt) <= window_seconds
+        ]
+
+    def rapid_relogin_attempt_count(self, window_seconds: int, now_monotonic: Optional[float] = None) -> int:
+        self.prune_rapid_relogin_attempts(window_seconds=window_seconds, now_monotonic=now_monotonic)
+        return len(self._data.get("rapid_relogin_attempts", []))
+
+    def add_rapid_relogin_attempt(self, now_monotonic: Optional[float] = None) -> None:
+        now_monotonic = time.monotonic() if now_monotonic is None else now_monotonic
+        attempts = list(self._data.get("rapid_relogin_attempts", []))
+        attempts.append(float(now_monotonic))
+        self._data["rapid_relogin_attempts"] = attempts
+
+    def clear_rapid_relogin_attempts(self) -> None:
+        self._data["rapid_relogin_attempts"] = []
 
     def save(self) -> None:
         try:
@@ -452,7 +519,11 @@ class UsageState:
     def ensure_today(self) -> None:
         today = _now_local().date().isoformat()
         if self._data.get("date") != today:
-            self._data = {"date": today, "seconds_today": 0.0}
+            self._data = {
+                "date": today,
+                "seconds_today": 0.0,
+                "rapid_relogin_attempts": [],
+            }
             self.save()
 
 
@@ -544,6 +615,11 @@ class ScreenTimeAgent:
         try:
             device = self._discovery_device()
             base_id = f"{self.config.child_id}_{self.config.device_id}_mac"
+            availability = {
+                "availability_topic": self.config.availability_topic,
+                "payload_available": "online",
+                "payload_not_available": "offline",
+            }
             disc = [
                 (
                     "sensor",
@@ -557,6 +633,7 @@ class ScreenTimeAgent:
                         "unit_of_measurement": "min",
                         "icon": "mdi:timer-outline",
                         "device": device,
+                        **availability,
                     },
                 ),
                 (
@@ -571,6 +648,7 @@ class ScreenTimeAgent:
                         "device_class": "running",
                         "icon": "mdi:laptop",
                         "device": device,
+                        **availability,
                     },
                 ),
             ]
@@ -585,6 +663,7 @@ class ScreenTimeAgent:
                             "state_topic": self.config.active_app_topic,
                             "icon": "mdi:laptop",
                             "device": device,
+                            **availability,
                         },
                     )
                 )
@@ -601,6 +680,7 @@ class ScreenTimeAgent:
                         "payload_off": "0",
                         "icon": "mdi:shield-check",
                         "device": device,
+                        **availability,
                     },
                 ),
                 (
@@ -618,6 +698,7 @@ class ScreenTimeAgent:
                         "unit_of_measurement": "min",
                         "icon": "mdi:timer-sand",
                         "device": device,
+                        **availability,
                     },
                 ),
                 (
@@ -632,6 +713,7 @@ class ScreenTimeAgent:
                         "payload_off": "OFF",
                         "icon": "mdi:shield-star",
                         "device": device,
+                        **availability,
                     },
                 ),
             ]
@@ -697,6 +779,7 @@ class ScreenTimeAgent:
             if self.config.track_active_app:
                 self._last_active_app = None
             # Request retained allowed value ASAP
+            client.publish(self.config.availability_topic, payload="online", retain=True, qos=1)
             client.publish(
                 self.config.status_topic,
                 json.dumps({"event": "online", "version": VERSION}),
@@ -779,17 +862,32 @@ class ScreenTimeAgent:
                 self._last_tick = loop_start
 
                 self.state.ensure_today()
+                loop_now = time.monotonic()
+                self.state.prune_rapid_relogin_attempts(
+                    self.config.rapid_relogin_window_seconds,
+                    now_monotonic=loop_now,
+                )
                 allowed_now = self._current_allowed_state()
                 blocked = not allowed_now
-                active = False if blocked else self._is_active_session()
+                session_locked = self._is_session_locked()
+                active = False if blocked else self._is_active_session(session_locked=session_locked)
                 if active:
                     self.state.add_seconds(elapsed)
 
                 minutes_now = self.state.minutes_today()
                 self._check_budget_warnings(minutes_today=minutes_now)
                 self._maybe_announce_initial_remaining()
-                active_app = self._frontmost_app_name() if self.config.track_active_app else None
+                active_app = (
+                    self._frontmost_app_name()
+                    if self.config.track_active_app and active
+                    else None
+                )
 
+                self._handle_rapid_relogin_protection(
+                    blocked=blocked,
+                    session_locked=session_locked,
+                    now_monotonic=loop_now,
+                )
                 self._maybe_save_state()
                 self._publish_metrics_if_needed(
                     active_now=active,
@@ -836,6 +934,53 @@ class ScreenTimeAgent:
         if remaining > 1:
             self._warned_1 = False
 
+    def _rapid_relogin_attempt_count(self, now_monotonic: Optional[float] = None) -> int:
+        return self.state.rapid_relogin_attempt_count(
+            self.config.rapid_relogin_window_seconds,
+            now_monotonic=now_monotonic,
+        )
+
+    def _handle_rapid_relogin_protection(
+        self, blocked: bool, session_locked: bool, now_monotonic: float
+    ) -> None:
+        if not self.config.rapid_relogin_shutdown_enabled:
+            self._last_session_locked = session_locked
+            self._blocked_unlock_counted = False if (not blocked or session_locked) else self._blocked_unlock_counted
+            return
+
+        if not blocked:
+            if self._rapid_relogin_attempt_count(now_monotonic) > 0:
+                self.logger.info("Clearing rapid relogin streak after access restored.")
+            self.state.clear_rapid_relogin_attempts()
+            self._rapid_relogin_warned_count = 0
+            self._blocked_unlock_counted = False
+            self._last_session_locked = session_locked
+            return
+
+        if session_locked:
+            self._blocked_unlock_counted = False
+        elif self._last_session_locked and not self._blocked_unlock_counted:
+            self.state.add_rapid_relogin_attempt(now_monotonic)
+            attempt_count = self._rapid_relogin_attempt_count(now_monotonic)
+            self._blocked_unlock_counted = True
+            self.logger.warning(
+                "Rapid relogin attempt detected while blocked: %s/%s within %ss.",
+                attempt_count,
+                self.config.rapid_relogin_max_attempts,
+                self.config.rapid_relogin_window_seconds,
+            )
+            if (
+                self.config.rapid_relogin_warn_voice
+                and attempt_count >= self.config.rapid_relogin_warn_attempt
+                and self._rapid_relogin_warned_count < self.config.rapid_relogin_warn_attempt
+            ):
+                self._notify_rapid_relogin_warning(attempt_count)
+                self._rapid_relogin_warned_count = attempt_count
+            if attempt_count >= self.config.rapid_relogin_max_attempts:
+                self._shutdown_computer()
+
+        self._last_session_locked = session_locked
+
     def _publish_metrics_if_needed(
         self, active_now: bool, active_app: Optional[str] = None, force: bool = False
     ) -> None:
@@ -873,6 +1018,7 @@ class ScreenTimeAgent:
                 "allowed": self._current_allowed_state(),
                 "minutes_today": minutes,
                 "last_allowed_payload": self._last_allowed_payload,
+                "rapid_relogin_attempts": self._rapid_relogin_attempt_count(now),
                 "active_app": self._last_active_app if self.config.track_active_app else None,
                 "timestamp": _now_local().isoformat(),
             }
@@ -915,7 +1061,7 @@ class ScreenTimeAgent:
         session = CGSessionCopyCurrentDictionary() or {}
         return bool(session.get("CGSSessionScreenIsLocked", 0))
 
-    def _is_active_session(self) -> bool:
+    def _is_active_session(self, session_locked: Optional[bool] = None) -> bool:
         try:
             idle_seconds = CGEventSourceSecondsSinceLastEventType(
                 kCGEventSourceStateHIDSystemState, kCGAnyInputEventType
@@ -928,7 +1074,9 @@ class ScreenTimeAgent:
             return True
         if idle_seconds > self.config.idle_timeout_seconds:
             return False
-        if self._is_session_locked():
+        if session_locked is None:
+            session_locked = self._is_session_locked()
+        if session_locked:
             return False
         return True
 
@@ -959,7 +1107,10 @@ class ScreenTimeAgent:
             else:
                 body = self._phrase("login_out_body")
                 voice = self._phrase("login_out_voice")
-            script = f'display notification "{body}" with title "{title}"'
+            script = (
+                f'display notification "{_escape_applescript_string(body)}" '
+                f'with title "{_escape_applescript_string(title)}"'
+            )
             subprocess.run(
                 ["/usr/bin/osascript", "-e", script],
                 check=True,
@@ -972,13 +1123,27 @@ class ScreenTimeAgent:
         finally:
             self._login_announced = True
 
+    def _notify_rapid_relogin_warning(self, attempt_count: int) -> None:
+        remaining_attempts = max(0, self.config.rapid_relogin_max_attempts - attempt_count)
+        if remaining_attempts <= 0:
+            return
+        message = (
+            f"Warning. One more login attempt will shut down this computer."
+            if remaining_attempts == 1
+            else f"Warning. {remaining_attempts} more login attempts will shut down this computer."
+        )
+        self._speak(message)
+
     def _notify_remaining(self, minutes: int, voice_only: bool = False) -> None:
         voice_key = "warn5_voice" if minutes >= 5 else "warn1_voice"
         body_key = "warn5_body" if minutes >= 5 else "warn1_body"
         if not voice_only:
             msg = self._phrase(body_key)
             title = self._phrase("title")
-            script = f'display notification "{msg}" with title "{title}"'
+            script = (
+                f'display notification "{_escape_applescript_string(msg)}" '
+                f'with title "{_escape_applescript_string(title)}"'
+            )
             try:
                 subprocess.run(
                     ["/usr/bin/osascript", "-e", script],
@@ -1062,6 +1227,27 @@ class ScreenTimeAgent:
 
     # ---------------------------------------------------------- SHUTDOWN --
 
+    def _shutdown_computer(self) -> None:
+        self.logger.critical(
+            "Rapid relogin threshold reached (%s attempts in %ss). Initiating shutdown.",
+            self.config.rapid_relogin_max_attempts,
+            self.config.rapid_relogin_window_seconds,
+        )
+        try:
+            self._publish_offline_state()
+        except Exception:
+            self.logger.debug("Failed to publish offline state before shutdown.", exc_info=True)
+        try:
+            subprocess.run(
+                ["/sbin/shutdown", "-h", "now"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError as exc:
+            self.logger.critical("Failed to shut down computer: %s", exc)
+            self._enforce_block(active_now=True)
+
     def _publish_offline_state(self) -> None:
         try:
             payload = {
@@ -1073,6 +1259,7 @@ class ScreenTimeAgent:
             }
             client = self._mqtt_client
             client.publish(self.config.active_topic, payload="0", retain=False, qos=0)
+            client.publish(self.config.availability_topic, payload="offline", retain=True, qos=1)
             if self.config.track_active_app:
                 client.publish(self.config.active_app_topic, payload="", retain=True, qos=1)
             client.publish(
