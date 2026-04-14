@@ -60,6 +60,8 @@ SUPPORTED_LANG_PHRASES = {
         "login_remaining_voice": "You have {minutes} minutes of screen time left today.",
         "login_out_body": "Screen time is out for today.",
         "login_out_voice": "Your screen time is used up for today.",
+        "rapid_relogin_warn_voice_one": "Warning. One more login attempt will shut down this computer.",
+        "rapid_relogin_warn_voice_many": "Warning. {count} more login attempts will shut down this computer.",
     },
     "de": {
         "title": "Bildschirmzeit",
@@ -72,6 +74,8 @@ SUPPORTED_LANG_PHRASES = {
         "login_remaining_voice": "Du hast noch {minutes} Minuten Bildschirmzeit heute.",
         "login_out_body": "Für heute ist keine Bildschirmzeit mehr übrig.",
         "login_out_voice": "Deine Bildschirmzeit für heute ist aufgebraucht.",
+        "rapid_relogin_warn_voice_one": "Warnung. Noch ein weiterer Anmeldeversuch und dieser Computer wird ausgeschaltet.",
+        "rapid_relogin_warn_voice_many": "Warnung. Noch {count} weitere Anmeldeversuche und dieser Computer wird ausgeschaltet.",
     },
     "fr": {
         "title": "Temps d'écran",
@@ -84,6 +88,8 @@ SUPPORTED_LANG_PHRASES = {
         "login_remaining_voice": "Il te reste {minutes} minutes de temps d'écran aujourd'hui.",
         "login_out_body": "Plus de temps d'écran pour aujourd'hui.",
         "login_out_voice": "Ton temps d'écran est terminé pour aujourd'hui.",
+        "rapid_relogin_warn_voice_one": "Attention. Une nouvelle tentative de connexion éteindra cet ordinateur.",
+        "rapid_relogin_warn_voice_many": "Attention. Encore {count} tentatives de connexion et cet ordinateur s'éteindra.",
     },
     "es": {
         "title": "Tiempo de pantalla",
@@ -96,6 +102,8 @@ SUPPORTED_LANG_PHRASES = {
         "login_remaining_voice": "Te quedan {minutes} minutos de tiempo de pantalla hoy.",
         "login_out_body": "No queda tiempo de pantalla para hoy.",
         "login_out_voice": "Tu tiempo de pantalla para hoy se ha terminado.",
+        "rapid_relogin_warn_voice_one": "Advertencia. Un intento más de inicio de sesión apagará este ordenador.",
+        "rapid_relogin_warn_voice_many": "Advertencia. {count} intentos más de inicio de sesión apagarán este ordenador.",
     },
     "it": {
         "title": "Tempo schermo",
@@ -108,6 +116,8 @@ SUPPORTED_LANG_PHRASES = {
         "login_remaining_voice": "Hai ancora {minutes} minuti di tempo schermo oggi.",
         "login_out_body": "Nessun tempo schermo rimasto per oggi.",
         "login_out_voice": "Hai terminato il tempo schermo per oggi.",
+        "rapid_relogin_warn_voice_one": "Avviso. Ancora un tentativo di accesso e questo computer si spegnerà.",
+        "rapid_relogin_warn_voice_many": "Avviso. Ancora {count} tentativi di accesso e questo computer si spegnerà.",
     },
     "nl": {
         "title": "Schermtijd",
@@ -120,6 +130,8 @@ SUPPORTED_LANG_PHRASES = {
         "login_remaining_voice": "Je hebt nog {minutes} minuten schermtijd vandaag.",
         "login_out_body": "Geen schermtijd meer over voor vandaag.",
         "login_out_voice": "Je schermtijd voor vandaag is op.",
+        "rapid_relogin_warn_voice_one": "Waarschuwing. Nog één aanmeldpoging en deze computer wordt uitgeschakeld.",
+        "rapid_relogin_warn_voice_many": "Waarschuwing. Nog {count} aanmeldpogingen en deze computer wordt uitgeschakeld.",
     },
     "pt": {
         "title": "Tempo de tela",
@@ -132,6 +144,8 @@ SUPPORTED_LANG_PHRASES = {
         "login_remaining_voice": "Você tem {minutes} minutos de tempo de tela hoje.",
         "login_out_body": "Sem tempo de tela restante para hoje.",
         "login_out_voice": "Seu tempo de tela de hoje acabou.",
+        "rapid_relogin_warn_voice_one": "Aviso. Mais uma tentativa de login desligará este computador.",
+        "rapid_relogin_warn_voice_many": "Aviso. Mais {count} tentativas de login desligarão este computador.",
     },
     "ja": {
         "title": "スクリーンタイム",
@@ -144,6 +158,8 @@ SUPPORTED_LANG_PHRASES = {
         "login_remaining_voice": "今日はスクリーンタイムがあと{minutes}分残っています。",
         "login_out_body": "今日はスクリーンタイムがもうありません。",
         "login_out_voice": "今日のスクリーンタイムは終わりました。",
+        "rapid_relogin_warn_voice_one": "警告です。あと1回ログインするとこのコンピュータはシャットダウンします。",
+        "rapid_relogin_warn_voice_many": "警告です。あと{count}回ログインするとこのコンピュータはシャットダウンします。",
     },
     "zh": {
         "title": "屏幕使用时间",
@@ -156,6 +172,8 @@ SUPPORTED_LANG_PHRASES = {
         "login_remaining_voice": "今天还剩 {minutes} 分钟的屏幕时间。",
         "login_out_body": "今天的屏幕时间已用完。",
         "login_out_voice": "今天的屏幕时间已经用完了。",
+        "rapid_relogin_warn_voice_one": "警告。再登录一次，这台电脑将会关机。",
+        "rapid_relogin_warn_voice_many": "警告。再登录{count}次，这台电脑将会关机。",
     },
 }
 
@@ -1130,11 +1148,10 @@ class ScreenTimeAgent:
         remaining_attempts = max(0, self.config.rapid_relogin_max_attempts - attempt_count)
         if remaining_attempts <= 0:
             return
-        message = (
-            f"Warning. One more login attempt will shut down this computer."
-            if remaining_attempts == 1
-            else f"Warning. {remaining_attempts} more login attempts will shut down this computer."
-        )
+        if remaining_attempts == 1:
+            message = self._phrase("rapid_relogin_warn_voice_one")
+        else:
+            message = self._phrase("rapid_relogin_warn_voice_many").format(count=remaining_attempts)
         self._speak(message)
 
     def _notify_remaining(self, minutes: int, voice_only: bool = False) -> None:
@@ -1240,16 +1257,40 @@ class ScreenTimeAgent:
             self._publish_offline_state()
         except Exception:
             self.logger.debug("Failed to publish offline state before shutdown.", exc_info=True)
-        try:
-            subprocess.run(
+
+        shutdown_attempts = [
+            (
+                "System Events",
+                ["/usr/bin/osascript", "-e", 'tell application "System Events" to shut down'],
+            ),
+            (
+                "Finder",
+                ["/usr/bin/osascript", "-e", 'tell application "Finder" to shut down'],
+            ),
+            (
+                "launchctl halt",
+                ["/bin/launchctl", "reboot", "halt"],
+            ),
+            (
+                "shutdown",
                 ["/sbin/shutdown", "-h", "now"],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except subprocess.CalledProcessError as exc:
-            self.logger.critical("Failed to shut down computer: %s", exc)
-            self._enforce_block(active_now=True)
+            ),
+        ]
+
+        for label, command in shutdown_attempts:
+            try:
+                subprocess.run(
+                    command,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                self.logger.critical("Shutdown command accepted via %s.", label)
+                return
+            except subprocess.CalledProcessError as exc:
+                self.logger.critical("Shutdown via %s failed: %s", label, exc)
+
+        self._enforce_block(active_now=True)
 
     def _publish_offline_state(self) -> None:
         try:
