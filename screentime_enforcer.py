@@ -603,6 +603,7 @@ class ScreenTimeAgent:
             protocol=mqtt.MQTTv311,
             clean_session=True,
         )
+        client.will_set(self.config.availability_topic, payload="offline", qos=1, retain=True)
         # Ensure HA receives an inactive state if the agent dies unexpectedly (non-retained).
         client.will_set(self.config.active_topic, payload="0", qos=1, retain=False)
         if self.config.mqtt_username:
@@ -1190,30 +1191,51 @@ class ScreenTimeAgent:
 
     def _lock_screen(self) -> None:
         self.logger.info("Locking screen (allowed=0).")
-        script = 'tell application "System Events" to key code 12 using {control down, command down}'
-        try:
-            subprocess.run(
-                ["/usr/bin/osascript", "-e", script],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return
-        except subprocess.CalledProcessError as exc:
-            self.logger.warning("osascript lock failed (%s); trying CGSession -suspend", exc)
-
-        try:
-            subprocess.run(
+        lock_attempts = [
+            (
+                "ScreenSaverEngine",
+                ["/usr/bin/open", "-a", "/System/Library/CoreServices/ScreenSaverEngine.app"],
+            ),
+            (
+                "pmset displaysleepnow",
+                ["/usr/bin/pmset", "displaysleepnow"],
+            ),
+            (
+                "System Events shortcut",
+                [
+                    "/usr/bin/osascript",
+                    "-e",
+                    'tell application "System Events" to key code 12 using {control down, command down}',
+                ],
+            ),
+            (
+                "CGSession suspend",
                 [
                     "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession",
                     "-suspend",
                 ],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except subprocess.CalledProcessError as exc:
-            self.logger.error("Failed to lock screen via CGSession: %s", exc)
+            ),
+        ]
+
+        for label, command in lock_attempts:
+            try:
+                subprocess.run(
+                    command,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except subprocess.CalledProcessError as exc:
+                self.logger.warning("Lock attempt via %s failed: %s", label, exc)
+                continue
+
+            time.sleep(0.4)
+            if self._is_session_locked():
+                self.logger.info("Session locked successfully via %s.", label)
+                return
+            self.logger.warning("Lock attempt via %s did not produce a locked session.", label)
+
+        self.logger.error("All lock attempts failed to produce a locked session.")
 
     def _logout_session(self) -> None:
         self.logger.warning(
@@ -1309,7 +1331,7 @@ class ScreenTimeAgent:
             client.publish(
                 self.config.status_topic,
                 payload=json.dumps(payload),
-                retain=True,
+                retain=False,
                 qos=1,
             )
         except Exception:
