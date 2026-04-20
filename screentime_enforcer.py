@@ -1269,17 +1269,7 @@ class ScreenTimeAgent:
 
     # ---------------------------------------------------------- SHUTDOWN --
 
-    def _shutdown_computer(self) -> None:
-        self.logger.critical(
-            "Rapid relogin threshold reached (%s attempts in %ss). Initiating shutdown.",
-            self.config.rapid_relogin_max_attempts,
-            self.config.rapid_relogin_window_seconds,
-        )
-        try:
-            self._publish_offline_state()
-        except Exception:
-            self.logger.debug("Failed to publish offline state before shutdown.", exc_info=True)
-
+    def _run_shutdown_attempts(self, phase: str) -> bool:
         shutdown_attempts = [
             (
                 "System Events",
@@ -1307,11 +1297,57 @@ class ScreenTimeAgent:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                self.logger.critical("Shutdown command accepted via %s.", label)
-                return
+                self.logger.critical("Shutdown command accepted via %s during %s.", label, phase)
+                return True
             except subprocess.CalledProcessError as exc:
-                self.logger.critical("Shutdown via %s failed: %s", label, exc)
+                self.logger.critical("Shutdown via %s failed during %s: %s", label, phase, exc)
+        return False
 
+    def _quit_blocking_apps_before_shutdown(self) -> None:
+        self.logger.critical("Attempting to close blocking user apps before shutdown retry.")
+        polite_quit_script = '\nset appNames to {"Music", "TV", "Safari", "Pages", "Numbers", "Keynote", "Preview", "TextEdit"}\ntell application "System Events"\n    repeat with appName in appNames\n        if exists process appName then\n            try\n                tell application appName to quit\n            end try\n        end if\n    end repeat\nend tell\n'
+        try:
+            subprocess.run(
+                ["/usr/bin/osascript", "-e", polite_quit_script],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            self.logger.warning("Polite app quit pass failed.", exc_info=True)
+
+        time.sleep(2)
+        for app_name in ("Music", "TV", "Safari", "Pages", "Numbers", "Keynote", "Preview", "TextEdit"):
+            try:
+                subprocess.run(
+                    ["/usr/bin/killall", app_name],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                self.logger.debug("Failed to kill possible blocker %s.", app_name, exc_info=True)
+
+    def _shutdown_computer(self) -> None:
+        self.logger.critical(
+            "Rapid relogin threshold reached (%s attempts in %ss). Initiating shutdown.",
+            self.config.rapid_relogin_max_attempts,
+            self.config.rapid_relogin_window_seconds,
+        )
+        try:
+            self._publish_offline_state()
+        except Exception:
+            self.logger.debug("Failed to publish offline state before shutdown.", exc_info=True)
+
+        if self._run_shutdown_attempts(phase="initial attempt"):
+            time.sleep(10)
+
+        self._quit_blocking_apps_before_shutdown()
+        if self._run_shutdown_attempts(phase="after app cleanup"):
+            time.sleep(5)
+
+        self._logout_session()
+        self._run_shutdown_attempts(phase="after forced logout")
         self._enforce_block(active_now=True)
 
     def _publish_offline_state(self) -> None:
