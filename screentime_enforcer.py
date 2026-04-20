@@ -572,6 +572,7 @@ class ScreenTimeAgent:
         self._rapid_relogin_warned_count = 0
         self._last_session_locked = self._is_session_locked()
         self._blocked_unlock_counted = False
+        self.state.clear_rapid_relogin_attempts()
 
     def _phrase(self, key: str) -> str:
         lang = self._language if self._language in SUPPORTED_LANG_PHRASES else "en"
@@ -604,8 +605,6 @@ class ScreenTimeAgent:
             clean_session=True,
         )
         client.will_set(self.config.availability_topic, payload="offline", qos=1, retain=True)
-        # Ensure HA receives an inactive state if the agent dies unexpectedly (non-retained).
-        client.will_set(self.config.active_topic, payload="0", qos=1, retain=False)
         if self.config.mqtt_username:
             client.username_pw_set(
                 self.config.mqtt_username, password=self.config.mqtt_password or None
@@ -800,7 +799,6 @@ class ScreenTimeAgent:
             client.subscribe(self.config.budget_state_topic)
             if self.config.track_active_app:
                 self._last_active_app = None
-            # Request retained allowed value ASAP
             client.publish(self.config.availability_topic, payload="online", retain=True, qos=1)
             client.publish(
                 self.config.status_topic,
