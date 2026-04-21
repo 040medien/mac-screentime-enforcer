@@ -1223,7 +1223,7 @@ class ScreenTimeAgent:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-            except subprocess.CalledProcessError as exc:
+            except (subprocess.CalledProcessError, OSError) as exc:
                 self.logger.warning("Lock attempt via %s failed: %s", label, exc)
                 continue
 
@@ -1403,6 +1403,7 @@ def _setup_logging(cfg: AgentConfig) -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
         handlers=[handler_file, handler_err, logging.StreamHandler(sys.stdout)],
+        force=True,
     )
 
 
