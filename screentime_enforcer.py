@@ -1332,10 +1332,6 @@ class ScreenTimeAgent:
             self.config.rapid_relogin_max_attempts,
             self.config.rapid_relogin_window_seconds,
         )
-        try:
-            self._publish_offline_state()
-        except Exception:
-            self.logger.debug("Failed to publish offline state before shutdown.", exc_info=True)
 
         if self._run_shutdown_attempts(phase="initial attempt"):
             time.sleep(10)
