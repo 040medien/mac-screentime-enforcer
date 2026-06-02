@@ -636,12 +636,26 @@ class ScreenTimeAgent:
         try:
             device = self._discovery_device()
             base_id = f"{self.config.child_id}_{self.config.device_id}_mac"
-            availability = {
+            agent_availability = {
                 "availability_topic": self.config.availability_topic,
                 "payload_available": "online",
                 "payload_not_available": "offline",
             }
             disc = [
+                (
+                    "binary_sensor",
+                    f"{base_id}_online",
+                    {
+                        "name": f"{self.config.child_id} Mac Agent Online",
+                        "unique_id": f"{base_id}_online",
+                        "state_topic": self.config.availability_topic,
+                        "payload_on": "online",
+                        "payload_off": "offline",
+                        "device_class": "connectivity",
+                        "icon": "mdi:lan-connect",
+                        "device": device,
+                    },
+                ),
                 (
                     "sensor",
                     f"{base_id}_minutes",
@@ -654,7 +668,6 @@ class ScreenTimeAgent:
                         "unit_of_measurement": "min",
                         "icon": "mdi:timer-outline",
                         "device": device,
-                        **availability,
                     },
                 ),
                 (
@@ -669,7 +682,7 @@ class ScreenTimeAgent:
                         "device_class": "running",
                         "icon": "mdi:laptop",
                         "device": device,
-                        **availability,
+                        **agent_availability,
                     },
                 ),
             ]
@@ -684,7 +697,7 @@ class ScreenTimeAgent:
                             "state_topic": self.config.active_app_topic,
                             "icon": "mdi:laptop",
                             "device": device,
-                            **availability,
+                            **agent_availability,
                         },
                     )
                 )
@@ -701,7 +714,6 @@ class ScreenTimeAgent:
                         "payload_off": "0",
                         "icon": "mdi:shield-check",
                         "device": device,
-                        **availability,
                     },
                 ),
                 (
@@ -719,7 +731,6 @@ class ScreenTimeAgent:
                         "unit_of_measurement": "min",
                         "icon": "mdi:timer-sand",
                         "device": device,
-                        **availability,
                     },
                 ),
                 (
@@ -734,7 +745,6 @@ class ScreenTimeAgent:
                         "payload_off": "OFF",
                         "icon": "mdi:shield-star",
                         "device": device,
-                        **availability,
                     },
                 ),
             ]
